@@ -50,9 +50,9 @@ impl EvalOutput {
     fn new<'ll>(
         module: &OsdiModule<'_>,
         val: mir::Value,
-        eval_outputs: &mut TiMap<EvalOutputSlot, mir::Value, &'ll llvm_sys::LLVMType>,
+        eval_outputs: &mut TiMap<EvalOutputSlot, mir::Value, BasicTypeEnum<'ll>>,
         requires_slot: bool,
-        ty: &'ll llvm_sys::LLVMType,
+        ty: BasicTypeEnum<'ll>,
     ) -> EvalOutput {
         match module.eval.dfg.value_def(val) {
             ValueDef::Result(_, _) => (),
@@ -99,8 +99,8 @@ pub struct Residual {
 impl Residual {
     pub fn new<'ll>(
         residual: &dae::Residual,
-        slots: &mut TiMap<EvalOutputSlot, mir::Value, &'ll llvm_sys::LLVMType>,
-        ty_real: &'ll llvm_sys::LLVMType,
+        slots: &mut TiMap<EvalOutputSlot, mir::Value, BasicTypeEnum<'ll>>,
+        ty_real: BasicTypeEnum<'ll>,
         func: &Function,
     ) -> Residual {
         let mut get_slot = |mut val| {
@@ -131,8 +131,8 @@ impl MatrixEntry {
     pub fn new<'ll>(
         entry: &dae::MatrixEntry,
         module: &OsdiModule<'_>,
-        slots: &mut TiMap<EvalOutputSlot, mir::Value, &'ll llvm_sys::LLVMType>,
-        ty_real: &'ll llvm_sys::LLVMType,
+        slots: &mut TiMap<EvalOutputSlot, mir::Value, BasicTypeEnum<'ll>>,
+        ty_real: BasicTypeEnum<'ll>,
         num_react: &mut u32,
     ) -> MatrixEntry {
         let mut get_output = |mut val| {
@@ -168,8 +168,8 @@ impl NoiseSource {
     pub fn new<'ll>(
         source: &dae::NoiseSource,
         module: &OsdiModule<'_>,
-        slots: &mut TiMap<EvalOutputSlot, mir::Value, &'ll llvm_sys::LLVMType>,
-        ty_real: &'ll llvm_sys::LLVMType,
+        slots: &mut TiMap<EvalOutputSlot, mir::Value, BasicTypeEnum<'ll>>,
+        ty_real: BasicTypeEnum<'ll>,
     ) -> NoiseSource {
         let mut get_output = |mut val| {
             val = strip_optbarrier(module.eval, val);
@@ -275,29 +275,29 @@ impl<'ll> OsdiInstanceData<'ll> {
         });
 
         let param_given = bitfield::arr_ty(params.len() as u32, cx);
-        let jacobian_ptr = cx.ty_array(cx.ty_ptr(), module.dae_system.jacobian.len() as u32);
-        let jacobian_ptr_react = cx.ty_array(cx.ty_ptr(), num_react);
-        let node_mapping = cx.ty_array(ty_u32, module.dae_system.unknowns.len() as u32);
-        let collapsed = cx.ty_array(cx.ty_c_bool(), module.node_collapse.num_pairs());
+        let jacobian_ptr = cx.ty_array(cx.ty_ptr().into(), module.dae_system.jacobian.len() as u32);
+        let jacobian_ptr_react = cx.ty_array(cx.ty_ptr().into(), num_react);
+        let node_mapping = cx.ty_array(ty_u32.into(), module.dae_system.unknowns.len() as u32);
+        let collapsed = cx.ty_array(cx.ty_c_bool().into(), module.node_collapse.num_pairs());
         let temperature = cx.ty_double();
         let connected_ports = cx.ty_int();
 
         let cache_slots: TiVec<_, _> =
             module.init.cache_slots.raw.values().map(|ty| lltype(ty, cx)).collect();
 
-        let state_idx = cx.ty_array(cx.ty_int(), module.intern.lim_state.len() as u32);
-        let static_fields: [_; NUM_CONST_FIELDS as usize] = [
-            param_given,
-            jacobian_ptr,
-            jacobian_ptr_react,
-            node_mapping,
-            collapsed,
-            temperature,
-            connected_ports,
-            state_idx,
+        let state_idx = cx.ty_array(cx.ty_int().into(), module.intern.lim_state.len() as u32);
+        let static_fields: [BasicTypeEnum; NUM_CONST_FIELDS as usize] = [
+            param_given.into(),
+            jacobian_ptr.into(),
+            jacobian_ptr_react.into(),
+            node_mapping.into(),
+            collapsed.into(),
+            temperature.into(),
+            connected_ports.into(),
+            state_idx.into(),
         ];
 
-        let fields: Vec<_> = static_fields
+        let fields: Vec<BasicTypeEnum> = static_fields
             .into_iter()
             .chain(params.values().copied())
             .chain(cache_slots.iter().copied())
@@ -329,7 +329,7 @@ impl<'ll> OsdiInstanceData<'ll> {
 
     pub unsafe fn store_bound_step(
         &self,
-        ptr: &'ll llvm_sys::LLVMValue,
+        ptr: PointerValue<'ll>,
         builder: &mir_llvm::Builder<'_, '_, 'll>,
     ) {
         if let Some(slot) = self.bound_step {
@@ -345,55 +345,43 @@ impl<'ll> OsdiInstanceData<'ll> {
     pub unsafe fn param_ptr(
         &self,
         param: OsdiInstanceParam,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> Option<(&'ll llvm_sys::LLVMValue, &'ll llvm_sys::LLVMType)> {
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> Option<(PointerValue<'ll>, BasicTypeEnum<'ll>)> {
         let (pos, _, ty) = self.params.get_full(&param)?;
         let elem = NUM_CONST_FIELDS + pos as u32;
-        let ptr = &*LLVMBuildStructGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(self.ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            elem,
-            UNNAMED,
-        );
-        Some((ptr, ty))
+        let ptr = builder.build_struct_gep(self.ty, ptr, elem, "param_ptr").unwrap();
+        Some((ptr, *ty))
     }
 
     pub unsafe fn nth_param_ptr(
         &self,
         pos: u32,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> (&'ll llvm_sys::LLVMValue, &'ll llvm_sys::LLVMType) {
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> (PointerValue<'ll>, BasicTypeEnum<'ll>) {
         let ty = self.params.get_index(pos as usize).unwrap().1;
         let elem = NUM_CONST_FIELDS + pos;
-        let ptr = &*LLVMBuildStructGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(self.ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            elem,
-            UNNAMED,
-        );
-        (ptr, ty)
+        let ptr = builder.build_struct_gep(self.ty, ptr, elem, "nth_param_ptr").unwrap();
+        (ptr, *ty)
     }
 
     pub fn nth_param_loc(
         &self,
         cx: &CodegenCx<'_, 'll>,
         pos: u32,
-        ptr: &'ll llvm_sys::LLVMValue,
+        ptr: PointerValue<'ll>,
     ) -> MemLoc<'ll> {
-        let ty = self.params.get_index(pos as usize).unwrap().1;
+        let ty = *self.params.get_index(pos as usize).unwrap().1;
         let elem = NUM_CONST_FIELDS + pos;
-        MemLoc::struct_gep(ptr, self.ty, ty, elem, cx)
+        MemLoc::struct_gep(ptr, self.ty.into(), ty, elem, cx)
     }
 
     pub fn param_loc(
         &self,
         cx: &CodegenCx<'_, 'll>,
         param: OsdiInstanceParam,
-        ptr: &'ll llvm_sys::LLVMValue,
+        ptr: PointerValue<'ll>,
     ) -> Option<MemLoc<'ll>> {
         let pos = self.params.get_index_of(&param)? as u32;
         let res = self.nth_param_loc(cx, pos, ptr);
@@ -403,47 +391,33 @@ impl<'ll> OsdiInstanceData<'ll> {
     pub unsafe fn read_param(
         &self,
         param: OsdiInstanceParam,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> Option<&'ll llvm_sys::LLVMValue> {
-        let (ptr, ty) = self.param_ptr(param, ptr, llbuilder)?;
-        let val = &*LLVMBuildLoad2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            UNNAMED,
-        );
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> Option<BasicValueEnum<'ll>> {
+        let (ptr, ty) = self.param_ptr(param, ptr, builder)?;
+        let val = builder.build_load(ty, ptr, "read_param").unwrap();
         Some(val)
     }
 
     pub unsafe fn store_nth_param(
         &self,
         param_id: u32,
-        ptr: &'ll llvm_sys::LLVMValue,
-        val: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> &'ll llvm_sys::LLVMValue {
-        let (ptr, _) = self.nth_param_ptr(param_id, ptr, llbuilder);
-        &*LLVMBuildStore(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(val).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-        )
+        ptr: PointerValue<'ll>,
+        val: BasicValueEnum<'ll>,
+        builder: &Builder<'ll>,
+    ) {
+        let (ptr, _) = self.nth_param_ptr(param_id, ptr, builder);
+        builder.build_store(ptr, val).unwrap();
     }
 
     pub unsafe fn read_nth_param(
         &self,
         pos: u32,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> &'ll llvm_sys::LLVMValue {
-        let (ptr, ty) = self.nth_param_ptr(pos, ptr, llbuilder);
-        &*LLVMBuildLoad2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            UNNAMED,
-        )
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> BasicValueEnum<'ll> {
+        let (ptr, ty) = self.nth_param_ptr(pos, ptr, builder);
+        builder.build_load(ty, ptr, "read_nth_param").unwrap()
     }
 
     // pub unsafe fn opvar_ptr(
