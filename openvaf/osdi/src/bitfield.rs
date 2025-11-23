@@ -1,11 +1,10 @@
-use core::ptr::NonNull;
 use std::mem::size_of;
 
-use llvm_sys::core::{
-    LLVMBuildAnd, LLVMBuildGEP2, LLVMBuildICmp, LLVMBuildLoad2, LLVMBuildOr, LLVMBuildStore,
-};
-use llvm_sys::LLVMIntPredicate::{LLVMIntEQ, LLVMIntNE};
-use mir_llvm::{CodegenCx, MemLoc, UNNAMED};
+use inkwell::builder::Builder;
+use inkwell::types::ArrayType;
+use inkwell::values::{BasicValueEnum, IntValue, PointerValue};
+use inkwell::IntPredicate;
+use mir_llvm::{CodegenCx, MemLoc};
 type Word = u32;
 const WORD_BYTES: u32 = size_of::<Word>() as u32;
 const WORD_BITS: u32 = WORD_BYTES * 8;
@@ -20,93 +19,63 @@ fn word_cnt(len: u32) -> u32 {
     (len + WORD_BITS - 1) / WORD_BITS
 }
 
-pub fn arr_ty<'ll>(len: u32, cx: &CodegenCx<'_, 'll>) -> &'ll llvm_sys::LLVMType {
-    cx.ty_array(cx.ty_int(), word_cnt(len))
+pub fn arr_ty<'ll>(len: u32, cx: &CodegenCx<'_, 'll>) -> ArrayType<'ll> {
+    cx.ty_array(cx.ty_int().into(), word_cnt(len))
 }
 pub unsafe fn word_ptr_and_mask<'ll>(
     cx: &CodegenCx<'_, 'll>,
     pos: u32,
-    arr_ptr: &'ll llvm_sys::LLVMValue,
-    arr_ty: &'ll llvm_sys::LLVMType,
-    llbuilder: &llvm_sys::LLVMBuilder,
-) -> (&'ll llvm_sys::LLVMValue, &'ll llvm_sys::LLVMValue) {
+    arr_ptr: PointerValue<'ll>,
+    arr_ty: ArrayType<'ll>,
+    builder: &Builder<'ll>,
+) -> (PointerValue<'ll>, IntValue<'ll>) {
     let (idx, mask) = word_index_and_mask(pos);
     let zero = cx.const_int(0);
     let pos = cx.const_unsigned_int(idx);
 
-    // Create an array of pointers without casting
-    let indices = [zero, pos];
-
-    let word_ptr = LLVMBuildGEP2(
-        NonNull::from(llbuilder).as_ptr(),
-        NonNull::from(arr_ty).as_ptr(),
-        NonNull::from(arr_ptr).as_ptr(),
-        indices.as_ptr() as *mut *mut _,
-        2,
-        UNNAMED,
-    );
+    // Build GEP to get pointer to word in array
+    let indices = [zero.into(), pos.into()];
+    let word_ptr = builder.build_gep(arr_ty, arr_ptr, &indices, "word_ptr").unwrap();
 
     let mask = cx.const_unsigned_int(mask);
-    // Convert the raw pointer back to a reference
-    (unsafe { &*word_ptr }, mask)
+    (word_ptr, mask)
 }
 
 pub unsafe fn is_set<'ll>(
     cx: &CodegenCx<'_, 'll>,
     pos: u32,
-    arr_ptr: &'ll llvm_sys::LLVMValue,
-    arr_ty: &'ll llvm_sys::LLVMType,
-    llbuilder: &llvm_sys::LLVMBuilder,
-) -> &'ll llvm_sys::LLVMValue {
-    let (ptr, mask) = word_ptr_and_mask(cx, pos, arr_ptr, arr_ty, llbuilder);
-    let word = LLVMBuildLoad2(
-        NonNull::from(llbuilder).as_ptr(),
-        NonNull::from(cx.ty_int()).as_ptr(),
-        NonNull::from(ptr).as_ptr(),
-        UNNAMED,
-    );
-    let is_set = LLVMBuildAnd(
-        NonNull::from(llbuilder).as_ptr(),
-        word,
-        NonNull::from(mask).as_ptr(),
-        UNNAMED,
-    );
+    arr_ptr: PointerValue<'ll>,
+    arr_ty: ArrayType<'ll>,
+    builder: &Builder<'ll>,
+) -> IntValue<'ll> {
+    let (ptr, mask) = word_ptr_and_mask(cx, pos, arr_ptr, arr_ty, builder);
+    let word = builder.build_load(cx.ty_int(), ptr, "word").unwrap().into_int_value();
+    let is_set = builder.build_and(word, mask, "is_set").unwrap();
     let zero = cx.const_int(0);
-    &*LLVMBuildICmp(
-        NonNull::from(llbuilder).as_ptr(),
-        LLVMIntNE,
-        is_set,
-        NonNull::from(zero).as_ptr(),
-        UNNAMED,
-    )
+    builder.build_int_compare(IntPredicate::NE, is_set, zero, "cmp").unwrap()
 }
 
 pub unsafe fn set_bit<'ll>(
     cx: &CodegenCx<'_, 'll>,
     pos: u32,
-    arr_ptr: &'ll llvm_sys::LLVMValue,
-    arr_ty: &'ll llvm_sys::LLVMType,
-    llbuilder: &llvm_sys::LLVMBuilder,
+    arr_ptr: PointerValue<'ll>,
+    arr_ty: ArrayType<'ll>,
+    builder: &Builder<'ll>,
 ) {
-    let (ptr, mask) = word_ptr_and_mask(cx, pos, arr_ptr, arr_ty, llbuilder);
-    let mut word = LLVMBuildLoad2(
-        NonNull::from(llbuilder).as_ptr(),
-        NonNull::from(cx.ty_int()).as_ptr(),
-        NonNull::from(ptr).as_ptr(),
-        UNNAMED,
-    );
-    word =
-        LLVMBuildOr(NonNull::from(llbuilder).as_ptr(), word, NonNull::from(mask).as_ptr(), UNNAMED);
-    LLVMBuildStore(NonNull::from(llbuilder).as_ptr(), word, NonNull::from(ptr).as_ptr());
+    let (ptr, mask) = word_ptr_and_mask(cx, pos, arr_ptr, arr_ty, builder);
+    let word = builder.build_load(cx.ty_int(), ptr, "word").unwrap().into_int_value();
+    let new_word = builder.build_or(word, mask, "new_word").unwrap();
+    builder.build_store(ptr, new_word).unwrap();
 }
 
 pub unsafe fn is_flag_set_mem<'ll>(
     cx: &CodegenCx<'_, 'll>,
     flag: u32,
     val: &MemLoc<'ll>,
-    llbuilder: &llvm_sys::LLVMBuilder,
-) -> &'ll llvm_sys::LLVMValue {
-    is_flag_set(cx, flag, val.read(llbuilder), llbuilder)
+    builder: &Builder<'ll>,
+) -> IntValue<'ll> {
+    let loaded = val.read(builder).into_int_value();
+    is_flag_set(cx, flag, loaded, builder)
 }
 
 // pub unsafe fn is_flag_unset_mem<'ll>(
@@ -121,47 +90,21 @@ pub unsafe fn is_flag_set_mem<'ll>(
 pub unsafe fn is_flag_set<'ll>(
     cx: &CodegenCx<'_, 'll>,
     flag: u32,
-    val: &'ll llvm_sys::LLVMValue,
-    llbuilder: &llvm_sys::LLVMBuilder,
-) -> &'ll llvm_sys::LLVMValue {
+    val: IntValue<'ll>,
+    builder: &Builder<'ll>,
+) -> IntValue<'ll> {
     let mask = cx.const_unsigned_int(flag);
-    let bits = LLVMBuildAnd(
-        NonNull::from(llbuilder).as_ptr(),
-        NonNull::from(mask).as_ptr(),
-        NonNull::from(val).as_ptr(),
-        UNNAMED,
-    );
-    unsafe {
-        &*LLVMBuildICmp(
-            NonNull::from(llbuilder).as_ptr(),
-            LLVMIntNE,
-            bits,
-            NonNull::from(cx.const_int(0)).as_ptr(),
-            UNNAMED,
-        )
-    }
+    let bits = builder.build_and(mask, val, "bits").unwrap();
+    builder.build_int_compare(IntPredicate::NE, bits, cx.const_int(0), "flag_set").unwrap()
 }
 
 pub unsafe fn is_flag_unset<'ll>(
     cx: &CodegenCx<'_, 'll>,
     flag: u32,
-    val: &'ll llvm_sys::LLVMValue,
-    llbuilder: &llvm_sys::LLVMBuilder,
-) -> &'ll llvm_sys::LLVMValue {
+    val: IntValue<'ll>,
+    builder: &Builder<'ll>,
+) -> IntValue<'ll> {
     let mask = cx.const_unsigned_int(flag);
-    let bits = LLVMBuildAnd(
-        NonNull::from(llbuilder).as_ptr(),
-        NonNull::from(mask).as_ptr(),
-        NonNull::from(val).as_ptr(),
-        UNNAMED,
-    );
-    unsafe {
-        &*LLVMBuildICmp(
-            NonNull::from(llbuilder).as_ptr(),
-            LLVMIntEQ,
-            bits,
-            NonNull::from(cx.const_int(0)).as_ptr(),
-            UNNAMED,
-        )
-    }
+    let bits = builder.build_and(mask, val, "bits").unwrap();
+    builder.build_int_compare(IntPredicate::EQ, bits, cx.const_int(0), "flag_unset").unwrap()
 }

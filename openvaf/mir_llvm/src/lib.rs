@@ -1,3 +1,4 @@
+use std::ffi::c_char;
 use std::path::Path;
 
 use inkwell::context::Context;
@@ -6,6 +7,10 @@ use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, Targe
 use inkwell::OptimizationLevel;
 use lasso::Rodeo;
 use target::spec::Target as TargetSpec;
+
+// Compatibility constant for OSDI code during migration
+// TODO: Remove once OSDI is fully migrated to inkwell
+pub const UNNAMED: *const c_char = b"\0".as_ptr() as *const c_char;
 
 mod builder;
 mod context;
