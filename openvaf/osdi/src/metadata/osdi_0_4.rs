@@ -726,7 +726,21 @@ pub struct OsdiTys<'ll> {
     pub osdi_attribute: &'ll llvm_sys::LLVMType,
 }
 impl<'ll> OsdiTys<'ll> {
-    pub fn new(ctx: &CodegenCx<'_, 'll>, target_data: llvm_sys::target::LLVMTargetDataRef) -> Self {
+    pub fn new(ctx: &CodegenCx<'_, 'll>, target_data: &inkwell::targets::TargetData) -> Self {
+        // Convert inkwell TargetData to raw pointer for internal use
+        // TODO: Migrate internal implementation to use inkwell TargetData directly
+        use inkwell::llvm_sys::target_machine::LLVMCreateTargetDataLayout;
+        use inkwell::llvm_sys::target::LLVMGetDataLayoutStr;
+        use std::ffi::CStr;
+        let raw_target_data = unsafe {
+            let layout_str = target_data.get_data_layout();
+            let layout_cstr = std::ffi::CString::new(layout_str.to_str().unwrap()).unwrap();
+            inkwell::llvm_sys::target::LLVMCreateTargetData(layout_cstr.as_ptr())
+        };
+        Self::new_from_raw(ctx, raw_target_data)
+    }
+
+    fn new_from_raw(ctx: &CodegenCx<'_, 'll>, target_data: llvm_sys::target::LLVMTargetDataRef) -> Self {
         let mut builder = OsdiTyBuilder {
             ctx,
             target_data,

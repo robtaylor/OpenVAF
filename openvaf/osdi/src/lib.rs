@@ -122,7 +122,7 @@ pub fn compile<'a>(
                 let name1 = access.clone();
                 let llmod = unsafe { back.new_module(&access, opt_lvl).unwrap() };
                 let cx = new_codegen(back, &llmod, literals_);
-                let tys = OsdiTys::new(&cx, NonNull::from(target_data_).as_ptr());
+                let tys = OsdiTys::new(&cx, target_data_);
                 let cguint = OsdiCompilationUnit::new(&_db, module, &cx, &tys, false);
 
                 cguint.access_function();
@@ -152,7 +152,7 @@ pub fn compile<'a>(
                 let name1 = name.clone();
                 let llmod = unsafe { back.new_module(&name, opt_lvl).unwrap() };
                 let cx = new_codegen(back, &llmod, literals_);
-                let tys = OsdiTys::new(&cx, NonNull::from(target_data_).as_ptr());
+                let tys = OsdiTys::new(&cx, target_data_);
                 let cguint = OsdiCompilationUnit::new(&_db, module, &cx, &tys, false);
 
                 cguint.setup_model();
@@ -182,7 +182,7 @@ pub fn compile<'a>(
                 let name1 = name.clone();
                 let llmod = unsafe { back.new_module(&name, opt_lvl).unwrap() };
                 let cx = new_codegen(back, &llmod, literals_);
-                let tys = OsdiTys::new(&cx, NonNull::from(target_data_).as_ptr());
+                let tys = OsdiTys::new(&cx, target_data_);
                 let mut cguint = OsdiCompilationUnit::new(&_db, module, &cx, &tys, false);
 
                 cguint.setup_instance();
@@ -214,7 +214,7 @@ pub fn compile<'a>(
                 let name1 = access.clone();
                 let llmod = unsafe { back.new_module(&access, opt_lvl).unwrap() };
                 let cx = new_codegen(back, &llmod, literals_);
-                let tys = OsdiTys::new(&cx, NonNull::from(target_data_).as_ptr());
+                let tys = OsdiTys::new(&cx, target_data_);
                 let cguint = OsdiCompilationUnit::new(&_db, module, &cx, &tys, true);
 
                 cguint.eval();
@@ -239,13 +239,13 @@ pub fn compile<'a>(
 
         let llmod = unsafe { back.new_module(&name, opt_lvl).unwrap() };
         let cx = new_codegen(back, &llmod, &literals);
-        let tys = OsdiTys::new(&cx, NonNull::from(target_data).as_ptr());
+        let tys = OsdiTys::new(&cx, &target_data);
 
         let descriptors: Vec<_> = osdi_modules
             .iter()
             .map(|module| {
                 let cguint = OsdiCompilationUnit::new(&db, module, &cx, &tys, false);
-                let descriptor = cguint.descriptor(&NonNull::from(target_data).as_ptr(), &db);
+                let descriptor = cguint.descriptor(&target_data, &db);
                 descriptor.to_ll_val(&cx, &tys)
             })
             .collect();
@@ -270,13 +270,8 @@ pub fn compile<'a>(
             true,
         );
 
-        let descr_size: u32;
-        unsafe {
-            descr_size = LLVMABISizeOfType(
-                NonNull::from(target_data).as_ptr(),
-                NonNull::from(tys.osdi_descriptor).as_ptr(),
-            ) as u32;
-        }
+        // Get the ABI size of the descriptor type
+        let descr_size: u32 = target_data.get_abi_size(&tys.osdi_descriptor.as_any_type_enum()) as u32;
 
         cx.export_val("OSDI_DESCRIPTOR_SIZE", cx.ty_int(), cx.const_unsigned_int(descr_size), true);
 
