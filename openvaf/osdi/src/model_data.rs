@@ -3,10 +3,10 @@ use std::hash::BuildHasherDefault;
 
 use hir::{CompilationDB, Parameter};
 use indexmap::IndexMap;
-use rustc_hash::FxHasher;
 use llvm_sys::core::{LLVMBuildLoad2, LLVMBuildStore, LLVMBuildStructGEP2};
 use llvm_sys::LLVMValue as Value;
 use mir_llvm::{CodegenCx, MemLoc, UNNAMED};
+use rustc_hash::FxHasher;
 
 use crate::compilation_unit::OsdiModule;
 use crate::inst_data::{OsdiInstanceData, OsdiInstanceParam};
@@ -29,17 +29,13 @@ impl<'ll> OsdiModelData<'ll> {
     ) -> Self {
         let inst_params = &inst_data.params;
         let mut params = IndexMap::with_hasher(BuildHasherDefault::<FxHasher>::default());
-        params.extend(cgunit
-            .info
-            .params
-            .keys()
-            .filter_map(|param| {
-                if inst_params.contains_key(&OsdiInstanceParam::User(*param)) {
-                    None
-                } else {
-                    Some((*param, lltype(&param.ty(db), cx)))
-                }
-            }));
+        params.extend(cgunit.info.params.keys().filter_map(|param| {
+            if inst_params.contains_key(&OsdiInstanceParam::User(*param)) {
+                None
+            } else {
+                Some((*param, lltype(&param.ty(db), cx)))
+            }
+        }));
 
         let param_given = bitfield::arr_ty((inst_params.len() + params.len()) as u32, cx);
 

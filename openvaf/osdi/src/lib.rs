@@ -117,7 +117,8 @@ pub fn compile<'a>(
 
     let main_file = dst.with_extension("o");
 
-    let unoptirs = Arc::new(Mutex::new(HashMap::with_hasher(BuildHasherDefault::<FxHasher>::default())));
+    let unoptirs =
+        Arc::new(Mutex::new(HashMap::with_hasher(BuildHasherDefault::<FxHasher>::default())));
     let irs = Arc::new(Mutex::new(HashMap::with_hasher(BuildHasherDefault::<FxHasher>::default())));
 
     // Build natures, disciplines, and attributes vectors, intern strings in Rodeo

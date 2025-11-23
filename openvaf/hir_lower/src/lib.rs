@@ -3,7 +3,6 @@ use std::iter::FilterMap;
 
 use ahash::{AHashMap, AHashSet};
 use bitset::HybridBitSet;
-use rustc_hash::FxHasher;
 pub use callbacks::{CallBackKind, NoiseTable, ParamInfoKind, RetFlag};
 use hir::{
     Branch, BranchWrite, CompilationDB, Module, Node, ParamSysFun, Parameter, Type, Variable,
@@ -13,6 +12,7 @@ use lasso::Rodeo;
 use mir::builder::InstBuilder;
 use mir::{DataFlowGraph, FuncRef, Function, Inst, KnownDerivatives, Param, Unknown, Value};
 use mir_build::{FunctionBuilder, FunctionBuilderContext, RetBuilder};
+use rustc_hash::FxHasher;
 use stdx::packed_option::PackedOption;
 use stdx::{impl_debug_display, impl_idx_from};
 use typed_index_collections::TiVec;

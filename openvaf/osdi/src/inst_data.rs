@@ -5,7 +5,6 @@ use std::hash::BuildHasherDefault;
 use hir::{CompilationDB, ParamSysFun, Parameter, Variable};
 use hir_lower::{HirInterner, LimitState, ParamKind, PlaceKind};
 use indexmap::IndexMap;
-use rustc_hash::FxHasher;
 use llvm_sys::core::{
     LLVMBuildFAdd,
     LLVMBuildFSub,
@@ -22,6 +21,7 @@ use llvm_sys::target::{LLVMOffsetOfElement, LLVMTargetDataRef};
 use llvm_sys::LLVMIntPredicate;
 use mir::{strip_optbarrier, Const, Function, Param, ValueDef, F_ZERO};
 use mir_llvm::{CodegenCx, MemLoc, UNNAMED};
+use rustc_hash::FxHasher;
 use sim_back::dae::{self, MatrixEntryId, SimUnknown};
 use sim_back::init::CacheSlot;
 use stdx::packed_option::PackedOption;
@@ -250,16 +250,12 @@ impl<'ll> OsdiInstanceData<'ll> {
 
         let mut eval_outputs = TiMap::default();
         let mut opvars = IndexMap::with_hasher(BuildHasherDefault::<FxHasher>::default());
-        opvars.extend(module
-            .info
-            .op_vars
-            .keys()
-            .map(|var| {
-                let val = module.intern.outputs[&PlaceKind::Var(*var)].unwrap_unchecked();
-                let ty = lltype(&var.ty(db), cx);
-                let pos = EvalOutput::new(module, val, &mut eval_outputs, true, ty);
-                (*var, pos)
-            }));
+        opvars.extend(module.info.op_vars.keys().map(|var| {
+            let val = module.intern.outputs[&PlaceKind::Var(*var)].unwrap_unchecked();
+            let ty = lltype(&var.ty(db), cx);
+            let pos = EvalOutput::new(module, val, &mut eval_outputs, true, ty);
+            (*var, pos)
+        }));
         let residual = module
             .dae_system
             .residual

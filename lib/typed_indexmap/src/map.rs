@@ -196,7 +196,8 @@ impl<I, K: Hash + Eq, V> FromIterator<(K, V)> for TiMap<I, K, V> {
 
 impl<I, K, V> AsRef<TiMap<I, K, V>> for IndexMap<K, V, BuildHasherDefault<FxHasher>> {
     fn as_ref(&self) -> &TiMap<I, K, V> {
-        let ptr = self as *const IndexMap<K, V, BuildHasherDefault<FxHasher>> as *const TiMap<I, K, V>;
+        let ptr =
+            self as *const IndexMap<K, V, BuildHasherDefault<FxHasher>> as *const TiMap<I, K, V>;
         // safety: this is save because of repr(transparent)
         unsafe { &*ptr }
     }
