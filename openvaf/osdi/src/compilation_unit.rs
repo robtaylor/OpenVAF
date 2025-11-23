@@ -4,15 +4,10 @@ use std::ptr::NonNull;
 use hir::CompilationDB;
 use hir_lower::fmt::{DisplayKind, FmtArg, FmtArgKind};
 use hir_lower::{CallBackKind, HirInterner, RetFlag};
+use inkwell::module::Linkage;
+use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue, IntValue, PointerValue};
+use inkwell::IntPredicate;
 use lasso::Rodeo;
-use llvm_sys::core::{
-    LLVMAddIncoming, LLVMAppendBasicBlockInContext, LLVMBuildAdd, LLVMBuildArrayMalloc,
-    LLVMBuildBr, LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildFMul, LLVMBuildFree, LLVMBuildICmp,
-    LLVMBuildInBoundsGEP2, LLVMBuildLoad2, LLVMBuildPhi, LLVMGetFirstFunction, LLVMGetNextFunction,
-    LLVMGetParam, LLVMIsDeclaration, LLVMPositionBuilderAtEnd, LLVMSetLinkage,
-    LLVMSetUnnamedAddress,
-};
-use llvm_sys::{LLVMIntPredicate, LLVMLinkage, LLVMUnnamedAddr, LLVMValue};
 use mir::{FuncRef, Function};
 use mir_llvm::{BuiltCallbackFun, CallbackFun, CodegenCx, LLVMBackend, ModuleLlvm, UNNAMED};
 use sim_back::dae::DaeSystem;
@@ -31,20 +26,6 @@ use crate::metadata::OsdiLimFunction;
 use crate::model_data::OsdiModelData;
 use crate::{lltype, OsdiLimId};
 
-fn function_iter(
-    module: &llvm_sys::LLVMModule,
-) -> impl Iterator<Item = *mut llvm_sys::LLVMValue> + '_ {
-    let fun = unsafe { LLVMGetFirstFunction(NonNull::from(module).as_ptr()) };
-    iter::successors(Some(fun), |&fun| {
-        let next_fun = unsafe { LLVMGetNextFunction(fun) };
-        if next_fun.is_null() {
-            None
-        } else {
-            Some(next_fun)
-        }
-    })
-}
-
 pub fn new_codegen<'a, 'll>(
     back: &'a LLVMBackend,
     llmod: &'ll ModuleLlvm,
@@ -53,15 +34,13 @@ pub fn new_codegen<'a, 'll>(
     let cx = unsafe { back.new_ctx(literals, llmod) };
     cx.include_bitcode(stdlib_bitcode(back.target()));
 
-    for fun in function_iter(llmod.llmod()) {
-        unsafe {
-            // LLVMPurgeAttrs(fun);
-            if LLVMIsDeclaration(fun) != 0 as i32 {
-                continue;
-            }
+    let module = llmod.module();
 
-            LLVMSetLinkage(fun, LLVMLinkage::LLVMInternalLinkage);
-            LLVMSetUnnamedAddress(fun, LLVMUnnamedAddr::LLVMGlobalUnnamedAddr);
+    // Set linkage for all non-declaration functions
+    for function in module.get_functions() {
+        if !function.is_declaration() {
+            function.set_linkage(Linkage::Internal);
+            function.set_unnamed_addr(true);
         }
     }
 
@@ -69,10 +48,9 @@ pub fn new_codegen<'a, 'll>(
     let char_table =
         cx.get_declared_value("FMT_CHARS").expect("constant FMT_CHARS missing from stdlib");
 
-    unsafe {
-        LLVMSetLinkage(NonNull::from(exp_table).as_ptr(), LLVMLinkage::LLVMInternalLinkage);
-        LLVMSetLinkage(NonNull::from(char_table).as_ptr(), LLVMLinkage::LLVMInternalLinkage);
-    }
+    // Set linkage for constant tables
+    exp_table.as_pointer_value().as_global_value().unwrap().set_linkage(Linkage::Internal);
+    char_table.as_pointer_value().as_global_value().unwrap().set_linkage(Linkage::Internal);
 
     cx
 }
@@ -84,7 +62,7 @@ pub struct OsdiCompilationUnit<'a, 'b, 'll> {
     pub tys: &'a OsdiTys<'ll>,
     pub cx: &'a CodegenCx<'b, 'll>,
     pub module: &'a OsdiModule<'b>,
-    pub lim_dispatch_table: Option<&'ll llvm_sys::LLVMValue>,
+    pub lim_dispatch_table: Option<PointerValue<'ll>>,
 }
 
 impl<'a, 'b, 'll> OsdiCompilationUnit<'a, 'b, 'll> {
@@ -103,28 +81,21 @@ impl<'a, 'b, 'll> OsdiCompilationUnit<'a, 'b, 'll> {
                 let ptr = cx
                     .define_global("OSDI_LIM_TABLE", ty)
                     .unwrap_or_else(|| unreachable!("symbol OSDI_LIM_TABLE already defined"));
-                unsafe {
-                    llvm_sys::core::LLVMSetLinkage(
-                        NonNull::from(ptr).as_ptr(),
-                        llvm_sys::LLVMLinkage::LLVMExternalLinkage,
-                    );
-                    llvm_sys::core::LLVMSetUnnamedAddress(
-                        NonNull::from(ptr).as_ptr(),
-                        llvm_sys::LLVMUnnamedAddr::LLVMNoUnnamedAddr,
-                    );
-                    llvm_sys::core::LLVMSetDLLStorageClass(
-                        NonNull::from(ptr).as_ptr(),
-                        llvm_sys::LLVMDLLStorageClass::LLVMDLLExportStorageClass,
-                    );
-                }
-                Some(ptr)
+
+                // Set linkage and DLL storage class using inkwell
+                let global = ptr.as_pointer_value().as_global_value().unwrap();
+                global.set_linkage(Linkage::External);
+                global.set_unnamed_addr(false);
+                global.set_dll_storage_class(inkwell::DLLStorageClass::Export);
+
+                Some(ptr.as_pointer_value())
             } else {
                 None
             };
         OsdiCompilationUnit { db, inst_data, model_data, tys, cx, module, lim_dispatch_table }
     }
 
-    pub fn lim_dispatch_table(&self) -> &'ll llvm_sys::LLVMValue {
+    pub fn lim_dispatch_table(&self) -> PointerValue<'ll> {
         self.lim_dispatch_table.unwrap()
     }
 }
