@@ -9,9 +9,7 @@ use hir::{CompilationDB, ParamSysFun, Type};
 use hir_def::db::HirDefDB;
 use hir_lower::{CallBackKind, HirInterner, ParamKind};
 use lasso::Rodeo;
-use llvm_sys::target::{LLVMABISizeOfType, LLVMDisposeTargetData};
-use llvm_sys::target_machine::LLVMCodeGenOptLevel;
-use mir_llvm::{CodegenCx, LLVMBackend};
+use mir_llvm::{CodegenCx, LLVMBackend, LLVMCodeGenOptLevel};
 use ndatable::nda_arrays;
 use salsa::ParallelDatabase;
 use sim_back::{CompiledModule, ModuleInfo};
@@ -38,22 +36,7 @@ mod setup;
 
 const OSDI_VERSION: (u32, u32) = (0, 4);
 
-use std::sync::Once;
-
-use llvm_sys::target::{LLVM_InitializeNativeAsmPrinter, LLVM_InitializeNativeTarget};
-
-static LLVM_INIT: Once = Once::new();
-
-fn initialize_llvm() {
-    LLVM_INIT.call_once(|| unsafe {
-        if LLVM_InitializeNativeTarget() != 0 {
-            panic!("Failed to initialize native target");
-        }
-        if LLVM_InitializeNativeAsmPrinter() != 0 {
-            panic!("Failed to initialize native ASM printer");
-        }
-    });
-}
+// LLVM initialization is now handled by inkwell in LLVMBackend::new()
 
 pub fn compile<'a>(
     db: &'a CompilationDB,
@@ -68,7 +51,7 @@ pub fn compile<'a>(
     dump_ir: bool,
     dump_unopt_ir: bool,
 ) -> (Vec<Utf8PathBuf>, Vec<CompiledModule<'a>>, Rodeo) {
-    initialize_llvm();
+    // LLVM initialization now happens in LLVMBackend::new()
     let mut literals = Rodeo::new();
     let mut lim_table = TiSet::default();
     let mnames: Vec<_> = modules.iter().map(|m| m.module.name(db)).collect();
