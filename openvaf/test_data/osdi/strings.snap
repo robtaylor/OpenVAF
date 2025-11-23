@@ -7,10 +7,6 @@ units = "none", desc = "Dummy", flags = ParameterFlags(PARA_TY_STR)
 
 2 terminals
 node "A" units = "V", runits = "A"
-residual 64 4294967295 4294967295 4294967295
 node "C" units = "V", runits = "A"
-residual 72 4294967295 4294967295 4294967295
 0 states
 has bound_step false
-instance size 80
-model size 32
