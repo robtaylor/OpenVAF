@@ -1,3 +1,4 @@
+use std::hash::BuildHasherDefault;
 use std::mem::replace;
 use std::vec;
 
@@ -13,6 +14,7 @@ use mir::{
     Value, FALSE, F_ONE, F_ZERO, TRUE,
 };
 use mir_autodiff::auto_diff;
+use rustc_hash::FxHasher;
 use typed_index_collections::TiVec;
 
 use crate::context::Context;
@@ -122,7 +124,7 @@ impl<'a> Builder<'a> {
 
     pub(super) fn with_small_signal_network(
         mut self,
-        small_signal_parameters: IndexSet<Value, ahash::RandomState>,
+        small_signal_parameters: IndexSet<Value, BuildHasherDefault<FxHasher>>,
     ) -> Self {
         self.system.small_signal_parameters = small_signal_parameters;
         self
