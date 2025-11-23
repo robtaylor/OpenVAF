@@ -1,11 +1,10 @@
-use core::ptr::NonNull;
-
 use ahash::RandomState;
 use hir::{CompilationDB, Parameter};
 use indexmap::IndexMap;
-use llvm_sys::core::{LLVMBuildLoad2, LLVMBuildStore, LLVMBuildStructGEP2};
-use llvm_sys::LLVMValue as Value;
-use mir_llvm::{CodegenCx, MemLoc, UNNAMED};
+use inkwell::builder::Builder;
+use inkwell::types::{ArrayType, BasicTypeEnum, StructType};
+use inkwell::values::{BasicValueEnum, PointerValue};
+use mir_llvm::{CodegenCx, MemLoc};
 
 use crate::compilation_unit::OsdiModule;
 use crate::inst_data::{OsdiInstanceData, OsdiInstanceParam};
@@ -14,9 +13,9 @@ use crate::{bitfield, lltype};
 const NUM_CONST_FIELDS: u32 = 1;
 
 pub struct OsdiModelData<'ll> {
-    pub param_given: &'ll llvm_sys::LLVMType,
-    pub params: IndexMap<Parameter, &'ll llvm_sys::LLVMType, RandomState>,
-    pub ty: &'ll llvm_sys::LLVMType,
+    pub param_given: ArrayType<'ll>,
+    pub params: IndexMap<Parameter, BasicTypeEnum<'ll>, RandomState>,
+    pub ty: StructType<'ll>,
 }
 
 impl<'ll> OsdiModelData<'ll> {
@@ -42,9 +41,9 @@ impl<'ll> OsdiModelData<'ll> {
 
         let param_given = bitfield::arr_ty((inst_params.len() + params.len()) as u32, cx);
 
-        let mut fields: Vec<_> = vec![param_given];
+        let mut fields: Vec<BasicTypeEnum> = vec![param_given.into()];
         fields.extend(params.values().copied());
-        fields.extend(inst_params.values());
+        fields.extend(inst_params.values().map(|t| *t));
 
         let name = &cgunit.sym;
         let name = format!("osdi_model_data_{name}");
@@ -57,20 +56,19 @@ impl<'ll> OsdiModelData<'ll> {
         &self,
         cx: &CodegenCx<'_, 'll>,
         pos: u32,
-        ptr: &'ll llvm_sys::LLVMValue,
+        ptr: PointerValue<'ll>,
     ) -> MemLoc<'ll> {
-        let ty = self.params.get_index(pos as usize).unwrap().1;
+        let ty = *self.params.get_index(pos as usize).unwrap().1;
         let elem = NUM_CONST_FIELDS + pos;
-        let indices =
-            vec![cx.const_unsigned_int(0), cx.const_unsigned_int(elem)].into_boxed_slice();
-        MemLoc { ptr, ptr_ty: self.ty, ty, indices }
+        let indices = vec![cx.const_unsigned_int(0), cx.const_unsigned_int(elem)];
+        MemLoc { ptr, ptr_ty: self.ty.into(), ty, indices }
     }
 
     pub fn param_loc(
         &self,
         cx: &CodegenCx<'_, 'll>,
         param: Parameter,
-        ptr: &'ll llvm_sys::LLVMValue,
+        ptr: PointerValue<'ll>,
     ) -> Option<MemLoc<'ll>> {
         let pos = self.params.get_index_of(&param)? as u32;
         let res = self.nth_param_loc(cx, pos, ptr);
@@ -80,19 +78,13 @@ impl<'ll> OsdiModelData<'ll> {
     pub unsafe fn param_ptr(
         &self,
         param: Parameter,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> Option<(&'ll llvm_sys::LLVMValue, &'ll llvm_sys::LLVMType)> {
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> Option<(PointerValue<'ll>, BasicTypeEnum<'ll>)> {
         let (pos, _, ty) = self.params.get_full(&param)?;
         let elem = NUM_CONST_FIELDS + pos as u32;
-        let ptr = &*LLVMBuildStructGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(self.ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            elem,
-            UNNAMED,
-        );
-        Some((ptr, ty))
+        let ptr = builder.build_struct_gep(self.ty, ptr, elem, "param_ptr").unwrap();
+        Some((ptr, *ty))
     }
 
     // build code for getting the pointer to the storage of pos-th parameter within ptr
@@ -100,21 +92,15 @@ impl<'ll> OsdiModelData<'ll> {
         &self,
         pos: u32,
         // unwrap() returns a tuple holding parameter and type, .1 selects type (ref to ref)
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> (&'ll llvm_sys::LLVMValue, &'ll llvm_sys::LLVMType) {
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> (PointerValue<'ll>, BasicTypeEnum<'ll>) {
         let ty = self.params.get_index(pos as usize).unwrap().1;
         // index of element, skip NUM_CONST_FIELDS
         let elem = NUM_CONST_FIELDS + pos;
         // retrieve pointer to parameter storage within model data structure pointed to by ptr
-        let ptr = &*LLVMBuildStructGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(self.ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            elem,
-            UNNAMED,
-        );
-        (ptr, ty)
+        let ptr = builder.build_struct_gep(self.ty, ptr, elem, "nth_param_ptr").unwrap();
+        (ptr, *ty)
     }
 
     pub unsafe fn nth_inst_param_ptr(
@@ -122,21 +108,15 @@ impl<'ll> OsdiModelData<'ll> {
         inst_data: &OsdiInstanceData<'ll>,
         pos: u32,
         // get the type, but this time from inst_data because pos is the instance parameter index
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> (&'ll llvm_sys::LLVMValue, &'ll llvm_sys::LLVMType) {
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> (PointerValue<'ll>, BasicTypeEnum<'ll>) {
         let ty = inst_data.params.get_index(pos as usize).unwrap().1;
         // index of element, skip NUM_CONST_FIELDS, then skip model parameter fields
         let elem = NUM_CONST_FIELDS + self.params.len() as u32 + pos;
         // retrieve pointer to parameter storage within model data structure pointed to by ptr
-        let ptr = &*LLVMBuildStructGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(self.ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            elem,
-            UNNAMED,
-        );
-        (ptr, ty)
+        let ptr = builder.build_struct_gep(self.ty, ptr, elem, "nth_inst_param_ptr").unwrap();
+        (ptr, *ty)
     }
 
     // pub unsafe fn read_param(
@@ -153,76 +133,55 @@ impl<'ll> OsdiModelData<'ll> {
     pub unsafe fn store_nth_param(
         &self,
         param: u32,
-        ptr: &'ll Value,
-        val: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
+        ptr: PointerValue<'ll>,
+        val: BasicValueEnum<'ll>,
+        builder: &Builder<'ll>,
     ) {
-        let (ptr, _) = self.nth_param_ptr(param, ptr, llbuilder);
-        LLVMBuildStore(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(val).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-        );
+        let (ptr, _) = self.nth_param_ptr(param, ptr, builder);
+        builder.build_store(ptr, val).unwrap();
     }
 
     // pub unsafe fn read_nth_param(
     //     &self,
     //     param: u32,
-    //     ptr: &'ll llvm_sys::LLVMValue,
-    //     llbuilder: &llvm_sys::LLVMBuilder,
-    // ) -> &'ll llvm_sys::LLVMValue {
-    //     let (ptr, ty) = self.nth_param_ptr(param, ptr, llbuilder);
-    //     LLVMBuildLoad2(llbuilder, ty, ptr, UNNAMED)
+    //     ptr: PointerValue<'ll>,
+    //     builder: &Builder<'ll>,
+    // ) -> BasicValueEnum<'ll> {
+    //     let (ptr, ty) = self.nth_param_ptr(param, ptr, builder);
+    //     builder.build_load(ty, ptr, "read_nth_param").unwrap()
     // }
 
     pub unsafe fn read_nth_inst_param(
         &self,
         inst_data: &OsdiInstanceData<'ll>,
         param: u32,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> &'ll llvm_sys::LLVMValue {
-        let (ptr, ty) = self.nth_inst_param_ptr(inst_data, param, ptr, llbuilder);
-        &*LLVMBuildLoad2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            UNNAMED,
-        )
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> BasicValueEnum<'ll> {
+        let (ptr, ty) = self.nth_inst_param_ptr(inst_data, param, ptr, builder);
+        builder.build_load(ty, ptr, "read_nth_inst_param").unwrap()
     }
 
     pub unsafe fn is_nth_param_given(
         &self,
         cx: &CodegenCx<'_, 'll>,
         pos: u32,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> &'ll llvm_sys::LLVMValue {
-        let arr_ptr = &*LLVMBuildStructGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(self.ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            0,
-            UNNAMED,
-        );
-        bitfield::is_set(cx, pos, arr_ptr, self.param_given, llbuilder)
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> inkwell::values::IntValue<'ll> {
+        let arr_ptr = builder.build_struct_gep(self.ty, ptr, 0, "param_given_arr").unwrap();
+        bitfield::is_set(cx, pos, arr_ptr, self.param_given, builder)
     }
 
     pub unsafe fn is_nth_inst_param_given(
         &self,
         cx: &CodegenCx<'_, 'll>,
         pos: u32,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> &'ll llvm_sys::LLVMValue {
-        let arr_ptr = &*LLVMBuildStructGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(self.ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            0,
-            UNNAMED,
-        );
-        bitfield::is_set(cx, pos + self.params.len() as u32, arr_ptr, self.param_given, llbuilder)
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> inkwell::values::IntValue<'ll> {
+        let arr_ptr = builder.build_struct_gep(self.ty, ptr, 0, "param_given_arr").unwrap();
+        bitfield::is_set(cx, pos + self.params.len() as u32, arr_ptr, self.param_given, builder)
     }
 
     pub unsafe fn is_inst_param_given(
@@ -230,21 +189,21 @@ impl<'ll> OsdiModelData<'ll> {
         inst_data: &OsdiInstanceData<'ll>,
         cx: &CodegenCx<'_, 'll>,
         param: OsdiInstanceParam,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> &'ll llvm_sys::LLVMValue {
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> inkwell::values::IntValue<'ll> {
         let pos = inst_data.params.get_index_of(&param).unwrap();
-        self.is_nth_inst_param_given(cx, pos as u32, ptr, llbuilder)
+        self.is_nth_inst_param_given(cx, pos as u32, ptr, builder)
     }
     pub unsafe fn is_param_given(
         &self,
         cx: &CodegenCx<'_, 'll>,
         param: Parameter,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> Option<&'ll llvm_sys::LLVMValue> {
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> Option<inkwell::values::IntValue<'ll>> {
         let pos = self.params.get_index_of(&param)?;
-        let res = self.is_nth_param_given(cx, pos as u32, ptr, llbuilder);
+        let res = self.is_nth_param_given(cx, pos as u32, ptr, builder);
         Some(res)
     }
 
@@ -252,33 +211,21 @@ impl<'ll> OsdiModelData<'ll> {
         &self,
         cx: &CodegenCx<'_, 'll>,
         pos: u32,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
     ) {
-        let arr_ptr = &*LLVMBuildStructGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(self.ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            0,
-            UNNAMED,
-        );
-        bitfield::set_bit(cx, pos + self.params.len() as u32, arr_ptr, self.param_given, llbuilder)
+        let arr_ptr = builder.build_struct_gep(self.ty, ptr, 0, "param_given_arr").unwrap();
+        bitfield::set_bit(cx, pos + self.params.len() as u32, arr_ptr, self.param_given, builder)
     }
     pub unsafe fn set_nth_param_given(
         &self,
         cx: &CodegenCx<'_, 'll>,
         pos: u32,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
     ) {
-        let arr_ptr = &*LLVMBuildStructGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(self.ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            0,
-            UNNAMED,
-        );
-        bitfield::set_bit(cx, pos, arr_ptr, self.param_given, llbuilder)
+        let arr_ptr = builder.build_struct_gep(self.ty, ptr, 0, "param_given_arr").unwrap();
+        bitfield::set_bit(cx, pos, arr_ptr, self.param_given, builder)
     }
 
     // pub unsafe fn set_param_given(

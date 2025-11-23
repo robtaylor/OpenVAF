@@ -1,8 +1,7 @@
 use std::path::Path;
 
 use camino::Utf8Path;
-use llvm_sys::target_machine::LLVMCodeGenOptLevel;
-use mir_llvm::LLVMBackend;
+use mir_llvm::{LLVMBackend, LLVMCodeGenOptLevel};
 use paths::AbsPathBuf;
 use sim_back::CompilationDB;
 use stdx::SKIP_HOST_TESTS;
