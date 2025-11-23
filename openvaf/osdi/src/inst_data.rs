@@ -704,57 +704,32 @@ impl<'ll> OsdiInstanceData<'ll> {
         &self,
         cx: &CodegenCx<'_, 'll>,
         node: SimUnknown,
-        ptr: &'ll llvm_sys::LLVMValue,
-        dst: &'ll llvm_sys::LLVMValue,
-        contrib: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
+        ptr: PointerValue<'ll>,
+        dst: PointerValue<'ll>,
+        contrib: inkwell::values::FloatValue<'ll>,
+        builder: &Builder<'ll>,
         negate: bool,
     ) {
-        let off = self.read_node_off(cx, node, ptr, llbuilder);
-        let off_val = off as *const llvm_sys::LLVMValue as *mut _;
-        let mut gep_indices: [llvm_sys::prelude::LLVMValueRef; 1] = [off_val];
-        let gep_ptr = gep_indices.as_mut_ptr();
+        let off = self.read_node_off(cx, node, ptr, builder);
+        let indices = [off.into()];
+        let dst = builder.build_gep(cx.ty_double(), dst, &indices, "contrib_gep").unwrap();
+        let old = builder.build_load(cx.ty_double(), dst, "old_contrib").unwrap().into_float_value();
 
-        let dst = LLVMBuildGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(cx.ty_double()).as_ptr(),
-            NonNull::from(dst).as_ptr(),
-            gep_ptr,
-            1,
-            UNNAMED,
-        );
-        let old = LLVMBuildLoad2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(cx.ty_double()).as_ptr(),
-            dst,
-            UNNAMED,
-        );
         let val = if negate {
-            LLVMBuildFSub(
-                NonNull::from(llbuilder).as_ptr(),
-                old,
-                NonNull::from(contrib).as_ptr(),
-                UNNAMED,
-            )
+            builder.build_float_sub(old, contrib, "negate_contrib").unwrap()
         } else {
-            LLVMBuildFAdd(
-                NonNull::from(llbuilder).as_ptr(),
-                old,
-                NonNull::from(contrib).as_ptr(),
-                UNNAMED,
-            )
+            builder.build_float_add(old, contrib, "add_contrib").unwrap()
         };
 
-        let fast_math_flags: c_uint = 0x1F; // This represents all flags set
-        llvm_sys::core::LLVMSetFastMathFlags(val, fast_math_flags);
-        //LLVMSetFastMath(val);
-        LLVMBuildStore(NonNull::from(llbuilder).as_ptr(), val, dst);
+        // Set fast math flags
+        val.set_fast_math_flags(inkwell::values::FloatMathFlags::all());
+        builder.build_store(dst, val).unwrap();
     }
 
     pub unsafe fn store_jacobian(
         &self,
         entry: MatrixEntryId,
-        inst_ptr: &'ll llvm_sys::LLVMValue,
+        inst_ptr: PointerValue<'ll>,
         builder: &mir_llvm::Builder<'_, '_, 'll>,
         reactive: bool,
     ) {
@@ -770,24 +745,18 @@ impl<'ll> OsdiInstanceData<'ll> {
         &self,
         cx: &CodegenCx<'_, 'll>,
         entry: MatrixEntryId,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
         reactive: bool,
         has_offset: bool,
-        offset: &'ll llvm_sys::LLVMValue,
-        val: &'ll llvm_sys::LLVMValue,
+        offset: IntValue<'ll>,
+        val: inkwell::values::FloatValue<'ll>,
     ) {
         // Field number within instance structure
         let field = if reactive { JACOBIAN_PTR_REACT } else { JACOBIAN_PTR_RESIST };
 
         // Get pointer to array of double* pointers
-        let ptr = LLVMBuildStructGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(self.ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            field,
-            UNNAMED,
-        );
+        let ptr = builder.build_struct_gep(self.ty, ptr, field, "jacobian_ptr_field").unwrap();
         let zero = cx.const_int(0);
         // Get entry index
         let entry = if reactive {
@@ -802,60 +771,26 @@ impl<'ll> OsdiInstanceData<'ll> {
         // Prepare type of Jacobian entry pointers array
         let ty = if reactive { self.jacobian_ptr_react } else { self.jacobian_ptr };
         // Create pointer to array entry with index entry
-        let zero_val = zero as *const llvm_sys::LLVMValue as *mut _;
-        let entry_val = entry as *const llvm_sys::LLVMValue as *mut _;
-        let mut gep_indices: [llvm_sys::prelude::LLVMValueRef; 2] = [zero_val, entry_val];
-        let gep_ptr = gep_indices.as_mut_ptr();
+        let indices = [zero.into(), entry.into()];
+        let ptr = builder.build_gep(ty, ptr, &indices, "jacobian_entry").unwrap();
 
-        let ptr = LLVMBuildGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(ty).as_ptr(),
-            ptr,
-            gep_ptr,
-            2,
-            UNNAMED,
-        );
         // Load value from destination pointed to by ptr (get pointer to Jacobian entry destination)
-        let mut dst = LLVMBuildLoad2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(cx.ty_ptr()).as_ptr(),
-            ptr,
-            UNNAMED,
-        );
+        let mut dst = builder.build_load(cx.ty_ptr(), ptr, "jacobian_dst").unwrap().into_pointer_value();
+
         // Add offset to destination
         if has_offset {
-            let offset_val = offset as *const llvm_sys::LLVMValue as *mut _;
-            let mut gep_indices: [llvm_sys::prelude::LLVMValueRef; 1] = [offset_val];
-            let gep_ptr = gep_indices.as_mut_ptr();
-
-            dst = LLVMBuildGEP2(
-                NonNull::from(llbuilder).as_ptr(),
-                NonNull::from(cx.ty_double()).as_ptr(),
-                dst,
-                gep_ptr,
-                1,
-                UNNAMED,
-            );
+            let indices = [offset.into()];
+            dst = builder.build_gep(cx.ty_double(), dst, &indices, "offset_dst").unwrap();
         }
         // Load value from where the Jacobian entry should be added (pointed to by dst)
-        let old = LLVMBuildLoad2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(cx.ty_double()).as_ptr(),
-            dst,
-            UNNAMED,
-        );
+        let old = builder.build_load(cx.ty_double(), dst, "old_jacobian").unwrap().into_float_value();
+
         // Add value to old
-        let val = LLVMBuildFAdd(
-            NonNull::from(llbuilder).as_ptr(),
-            old,
-            NonNull::from(val).as_ptr(),
-            UNNAMED,
-        );
+        let val = builder.build_float_add(old, val, "jacobian_add").unwrap();
         // Set fast math flags on result
-        let fast_math_flags: c_uint = 0x1F; // This represents all flags set
-        llvm_sys::core::LLVMSetFastMathFlags(val, fast_math_flags);
+        val.set_fast_math_flags(inkwell::values::FloatMathFlags::all());
         // Store value where dst pointer points to
-        LLVMBuildStore(NonNull::from(llbuilder).as_ptr(), val, dst);
+        builder.build_store(dst, val).unwrap();
     }
 
     // Writes Jacobian contribution to corresponding slot in array of doubles
@@ -863,32 +798,20 @@ impl<'ll> OsdiInstanceData<'ll> {
         &self,
         cx: &CodegenCx<'_, 'll>,
         entry: u32,
-        ty: &'ll llvm_sys::LLVMType,
-        ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-        val: &'ll llvm_sys::LLVMValue,
+        ty: BasicTypeEnum<'ll>,
+        ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+        val: BasicValueEnum<'ll>,
     ) {
         let zero = cx.const_int(0);
-
         // Convert to LLVM u32
         let entry = cx.const_unsigned_int(entry);
         // Create pointer to array entry with index entry
-        let zero_val = zero as *const llvm_sys::LLVMValue as *mut _;
-        let entry_val = entry as *const llvm_sys::LLVMValue as *mut _;
-        let mut gep_indices: [llvm_sys::prelude::LLVMValueRef; 2] = [zero_val, entry_val];
-        let gep_ptr = gep_indices.as_mut_ptr();
-
-        let ptr = LLVMBuildGEP2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            gep_ptr,
-            2,
-            UNNAMED,
-        );
+        let indices = [zero.into(), entry.into()];
+        let ptr = builder.build_gep(ty, ptr, &indices, "write_jacobian_entry").unwrap();
 
         // Store value where dst pointer points to
-        LLVMBuildStore(NonNull::from(llbuilder).as_ptr(), NonNull::from(val).as_ptr(), ptr);
+        builder.build_store(ptr, val).unwrap();
     }
 
     pub fn cache_slot_elem(&self, slot: CacheSlot) -> u32 {
@@ -897,19 +820,13 @@ impl<'ll> OsdiInstanceData<'ll> {
 
     fn cache_slot_ptr(
         &self,
-        llbuilder: &llvm_sys::LLVMBuilder,
+        builder: &Builder<'ll>,
         slot: CacheSlot,
-        ptr: &'ll llvm_sys::LLVMValue,
-    ) -> (&'ll llvm_sys::LLVMValue, &'ll llvm_sys::LLVMType) {
+        ptr: PointerValue<'ll>,
+    ) -> (PointerValue<'ll>, BasicTypeEnum<'ll>) {
         let elem = self.cache_slot_elem(slot);
         let ptr = unsafe {
-            &*LLVMBuildStructGEP2(
-                NonNull::from(llbuilder).as_ptr(),
-                NonNull::from(self.ty).as_ptr(),
-                NonNull::from(ptr).as_ptr(),
-                elem,
-                UNNAMED,
-            )
+            builder.build_struct_gep(self.ty, ptr, elem, "cache_slot").unwrap()
         };
         let ty = self.cache_slots[slot];
         (ptr, ty)
@@ -918,26 +835,17 @@ impl<'ll> OsdiInstanceData<'ll> {
     pub unsafe fn load_cache_slot(
         &self,
         module: &OsdiModule,
-        llbuilder: &llvm_sys::LLVMBuilder,
+        builder: &Builder<'ll>,
         slot: CacheSlot,
-        ptr: &'ll llvm_sys::LLVMValue,
-    ) -> &'ll llvm_sys::LLVMValue {
-        let (ptr, ty) = self.cache_slot_ptr(llbuilder, slot, ptr);
-        let mut val = &*LLVMBuildLoad2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            UNNAMED,
-        );
+        ptr: PointerValue<'ll>,
+    ) -> BasicValueEnum<'ll> {
+        let (ptr, ty) = self.cache_slot_ptr(builder, slot, ptr);
+        let mut val = builder.build_load(ty, ptr, "cache_slot_val").unwrap();
 
         if module.init.cache_slots[slot] == hir::Type::Bool {
-            val = &*LLVMBuildICmp(
-                NonNull::from(llbuilder).as_ptr(),
-                LLVMIntPredicate::LLVMIntNE,
-                NonNull::from(val).as_ptr(),
-                LLVMConstInt(NonNull::from(ty).as_ptr(), 0, 0),
-                UNNAMED,
-            );
+            let int_val = val.into_int_value();
+            let zero = ty.into_int_type().const_int(0, false);
+            val = builder.build_int_compare(IntPredicate::NE, int_val, zero, "bool_cmp").unwrap().into();
         }
 
         val
@@ -946,94 +854,60 @@ impl<'ll> OsdiInstanceData<'ll> {
     pub unsafe fn store_cache_slot(
         &self,
         module: &OsdiModule,
-        llbuilder: &llvm_sys::LLVMBuilder,
+        builder: &Builder<'ll>,
         slot: CacheSlot,
-        ptr: &'ll llvm_sys::LLVMValue,
-        mut val: &'ll llvm_sys::LLVMValue,
+        ptr: PointerValue<'ll>,
+        mut val: BasicValueEnum<'ll>,
     ) {
-        let (ptr, ty) = self.cache_slot_ptr(llbuilder, slot, ptr);
+        let (ptr, ty) = self.cache_slot_ptr(builder, slot, ptr);
         if module.init.cache_slots[slot] == hir::Type::Bool {
-            val = &*LLVMBuildIntCast2(
-                NonNull::from(llbuilder).as_ptr(),
-                NonNull::from(val).as_ptr(),
-                NonNull::from(ty).as_ptr(),
-                0,
-                UNNAMED,
-            );
+            val = builder.build_int_cast(val.into_int_value(), ty.into_int_type(), "bool_cast").unwrap().into();
         }
-        LLVMBuildStore(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(val).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-        );
+        builder.build_store(ptr, val).unwrap();
     }
     pub unsafe fn store_is_collapsible(
         &self,
         cx: &CodegenCx<'_, 'll>,
-        llbuilder: &llvm_sys::LLVMBuilder,
-        ptr: &'ll llvm_sys::LLVMValue,
-        idx: &'ll llvm_sys::LLVMValue,
+        builder: &Builder<'ll>,
+        ptr: PointerValue<'ll>,
+        idx: IntValue<'ll>,
     ) {
-        let builder_ptr = NonNull::from(llbuilder).as_ptr();
-        let ty_ptr = NonNull::from(self.ty).as_ptr();
-
         // Create GEP for the struct field
-        let mut ptr = LLVMBuildStructGEP2(
-            builder_ptr,
-            ty_ptr,
-            NonNull::from(ptr).as_ptr(),
-            COLLAPSED,
-            UNNAMED,
-        );
+        let ptr = builder.build_struct_gep(self.ty, ptr, COLLAPSED, "collapsed").unwrap();
 
-        // Stable storage for GEP indices
-        let idx_0: llvm_sys::prelude::LLVMValueRef =
-            cx.const_unsigned_int(0) as *const llvm_sys::LLVMValue as *mut _;
-        let idx_1: llvm_sys::prelude::LLVMValueRef = idx as *const llvm_sys::LLVMValue as *mut _;
-
-        // Pointers array for GEP indices
-        let mut gep_indices: [llvm_sys::prelude::LLVMValueRef; 2] = [idx_0, idx_1];
-        let gep_ptr = gep_indices.as_mut_ptr();
-
-        // Apply GEP2 for collapsed field
-        ptr = LLVMBuildGEP2(
-            builder_ptr,
-            NonNull::from(self.collapsed).as_ptr(),
-            ptr,
-            gep_ptr,
-            2,
-            UNNAMED,
-        );
+        // Apply GEP for collapsed field array access
+        let indices = [cx.const_unsigned_int(0).into(), idx.into()];
+        let ptr = builder.build_gep(self.collapsed, ptr, &indices, "collapsed_gep").unwrap();
 
         // Final store operation
-        LLVMBuildStore(builder_ptr, NonNull::from(cx.const_c_bool(true)).as_ptr(), ptr);
+        builder.build_store(ptr, cx.const_c_bool(true)).unwrap();
     }
 
     pub unsafe fn temperature_loc(
         &self,
         cx: &CodegenCx<'_, 'll>,
-        ptr: &'ll llvm_sys::LLVMValue,
+        ptr: PointerValue<'ll>,
     ) -> MemLoc<'ll> {
-        MemLoc::struct_gep(ptr, self.ty, cx.ty_double(), TEMPERATURE, cx)
+        MemLoc::struct_gep(ptr, self.ty.into(), cx.ty_double().into(), TEMPERATURE, cx)
     }
 
     pub unsafe fn store_temperature(
         &self,
         builder: &mut mir_llvm::Builder<'_, '_, 'll>,
-        ptr: &'ll llvm_sys::LLVMValue,
-        val: &'ll llvm_sys::LLVMValue,
+        ptr: PointerValue<'ll>,
+        val: BasicValueEnum<'ll>,
     ) {
-        let ptr = builder.struct_gep(self.ty, ptr, TEMPERATURE);
-        builder.store(ptr, val)
+        let ptr = builder.inkwell_builder.build_struct_gep(self.ty, ptr, TEMPERATURE, "temperature").unwrap();
+        builder.inkwell_builder.build_store(ptr, val).unwrap();
     }
 
     pub unsafe fn load_connected_ports(
         &self,
         builder: &mut mir_llvm::Builder<'_, '_, 'll>,
-        ptr: &'ll llvm_sys::LLVMValue,
-    ) -> &'ll llvm_sys::LLVMValue {
-        let ptr = builder.struct_gep(self.ty, ptr, CONNECTED);
-        builder.load(builder.cx.ty_int(), ptr)
+        ptr: PointerValue<'ll>,
+    ) -> IntValue<'ll> {
+        let ptr = builder.inkwell_builder.build_struct_gep(self.ty, ptr, CONNECTED, "connected").unwrap();
+        builder.inkwell_builder.build_load(builder.cx.ty_int(), ptr, "connected_ports").unwrap().into_int_value()
     }
 
     pub unsafe fn store_connected_ports(
