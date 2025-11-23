@@ -148,9 +148,9 @@ impl<'a> OsdiModule<'a> {
 pub fn general_callbacks<'ll>(
     intern: &HirInterner,
     builder: &mut mir_llvm::Builder<'_, '_, 'll>,
-    ret_flags: &'ll llvm_sys::LLVMValue,
-    handle: &'ll llvm_sys::LLVMValue,
-    simparam: &'ll llvm_sys::LLVMValue,
+    ret_flags: BasicValueEnum<'ll>,
+    handle: BasicValueEnum<'ll>,
+    simparam: BasicValueEnum<'ll>,
 ) -> TiVec<FuncRef, Option<CallbackFun<'ll>>> {
     let ptr_ty = builder.cx.ty_ptr();
     intern
@@ -305,7 +305,7 @@ fn print_callback<'ll>(
     cx: &CodegenCx<'_, 'll>,
     kind: hir_lower::fmt::DisplayKind,
     arg_tys: &[FmtArg],
-) -> (&'ll llvm_sys::LLVMValue, &'ll llvm_sys::LLVMType) {
+) -> (BasicValueEnum<'ll>, BasicValueEnum<'ll>) {
     let mut args = vec![cx.ty_ptr(), cx.ty_ptr()];
     args.extend(arg_tys.iter().map(|arg| lltype(&arg.ty, cx)));
     let fun_ty = cx.ty_func(&args, cx.ty_void());
