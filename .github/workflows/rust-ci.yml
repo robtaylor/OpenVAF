@@ -148,6 +148,7 @@ jobs:
         mkdir -p .cargo
         echo '[net]' > .cargo/config.toml
         echo 'git-fetch-with-cli = true' >> .cargo/config.toml
+
     - name: Cache sc
       uses: actions/cache@v4
       with:
@@ -155,6 +156,7 @@ jobs:
         key: ${{ runner.os }}-sccache-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-sccache-
+
     - name: Locate and configure sccache
       shell: msys2 {0}
       run: |
@@ -207,7 +209,7 @@ jobs:
     - name: Install dependencies with Homebrew
       uses: tecolicom/actions-use-homebrew-tools@v1
       with:
-        tools: pkg-config mingw-w64 sccache llvm@18
+        tools: pkg-config sccache llvm@18
         cache: yes
 
     - name: Set LLVM environment variables
