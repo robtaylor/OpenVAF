@@ -913,14 +913,11 @@ impl<'ll> OsdiInstanceData<'ll> {
     pub unsafe fn store_connected_ports(
         &self,
         builder: &mut mir_llvm::Builder<'_, '_, 'll>,
-        ptr: &'ll llvm_sys::LLVMValue,
-        val: &'ll llvm_sys::LLVMValue,
+        ptr: PointerValue<'ll>,
+        val: BasicValueEnum<'ll>,
     ) {
-        /*let builder_mut: &mut _ = unsafe {
-            &mut *(builder as *const _ as *mut mir_llvm::Builder<'_, '_, 'll>)
-        };*/
-        let ptr = builder.struct_gep(self.ty, ptr, CONNECTED);
-        builder.store(ptr, val)
+        let ptr = builder.inkwell_builder.build_struct_gep(self.ty, ptr, CONNECTED, "connected").unwrap();
+        builder.inkwell_builder.build_store(ptr, val).unwrap();
     }
 }
 
@@ -928,14 +925,14 @@ impl<'ll> OsdiCompilationUnit<'_, '_, 'll> {
     pub unsafe fn load_eval_output(
         &self,
         output: EvalOutput,
-        inst_ptr: &'ll llvm_sys::LLVMValue,
-        model_ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> &'ll llvm_sys::LLVMValue {
+        inst_ptr: PointerValue<'ll>,
+        model_ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> BasicValueEnum<'ll> {
         let OsdiCompilationUnit { inst_data, model_data, cx, module, .. } = self;
         let (ptr, ty) = match output {
             EvalOutput::Calculated(slot) => {
-                inst_data.eval_output_slot_ptr(llbuilder, inst_ptr, slot)
+                inst_data.eval_output_slot_ptr(builder, inst_ptr, slot)
             }
             EvalOutput::Const(val, _) => {
                 return cx.const_val(&val);
@@ -945,22 +942,16 @@ impl<'ll> OsdiCompilationUnit<'_, '_, 'll> {
                 let (kind, _) = intern.params.get_index(param).unwrap();
                 match *kind {
                     ParamKind::Param(param) => inst_data
-                        .param_ptr(OsdiInstanceParam::User(param), inst_ptr, llbuilder)
+                        .param_ptr(OsdiInstanceParam::User(param), inst_ptr, builder)
                         .unwrap_or_else(|| {
-                            model_data.param_ptr(param, model_ptr, llbuilder).unwrap()
+                            model_data.param_ptr(param, model_ptr, builder).unwrap()
                         }),
-                    ParamKind::Temperature => (
-                        &*LLVMBuildStructGEP2(
-                            NonNull::from(llbuilder).as_ptr(),
-                            NonNull::from(cx.ty_double()).as_ptr(),
-                            NonNull::from(inst_ptr).as_ptr(),
-                            TEMPERATURE,
-                            UNNAMED,
-                        ),
-                        cx.ty_double(),
-                    ),
+                    ParamKind::Temperature => {
+                        let ptr = builder.build_struct_gep(inst_data.ty, inst_ptr, TEMPERATURE, "temperature").unwrap();
+                        (ptr, cx.ty_double().into())
+                    }
                     ParamKind::ParamSysFun(func) => inst_data
-                        .param_ptr(OsdiInstanceParam::Builtin(func), inst_ptr, llbuilder)
+                        .param_ptr(OsdiInstanceParam::Builtin(func), inst_ptr, builder)
                         .unwrap(),
 
                     ParamKind::HiddenState(_) => todo!("hidden state"),
@@ -977,50 +968,41 @@ impl<'ll> OsdiCompilationUnit<'_, '_, 'll> {
                     | ParamKind::ImplicitUnknown(_) => unreachable!(),
                 }
             }
-            EvalOutput::Cache(slot) => inst_data.cache_slot_ptr(llbuilder, slot, inst_ptr),
+            EvalOutput::Cache(slot) => inst_data.cache_slot_ptr(builder, slot, inst_ptr),
         };
 
-        &*LLVMBuildLoad2(
-            NonNull::from(llbuilder).as_ptr(),
-            NonNull::from(ty).as_ptr(),
-            NonNull::from(ptr).as_ptr(),
-            UNNAMED,
-        )
+        builder.build_load(ty, ptr, "load_eval_output").unwrap()
     }
 
     pub unsafe fn load_jacobian_entry(
         &self,
         entry: MatrixEntryId,
-        inst_ptr: &'ll llvm_sys::LLVMValue,
-        model_ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
+        inst_ptr: PointerValue<'ll>,
+        model_ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
         reactive: bool,
-    ) -> Option<&'ll llvm_sys::LLVMValue> {
+    ) -> Option<BasicValueEnum<'ll>> {
         let entry = &self.inst_data.jacobian[entry];
         let entry = if reactive { entry.react } else { entry.resist };
-        let val = self.load_eval_output(entry?, inst_ptr, model_ptr, llbuilder);
+        let val = self.load_eval_output(entry?, inst_ptr, model_ptr, builder);
         Some(val)
     }
 
     pub unsafe fn nth_opvar_ptr(
         &self,
         pos: u32,
-        inst_ptr: &'ll llvm_sys::LLVMValue,
-        model_ptr: &'ll llvm_sys::LLVMValue,
-        llbuilder: &llvm_sys::LLVMBuilder,
-    ) -> (&'ll llvm_sys::LLVMValue, &'ll llvm_sys::LLVMType) {
+        inst_ptr: PointerValue<'ll>,
+        model_ptr: PointerValue<'ll>,
+        builder: &Builder<'ll>,
+    ) -> (PointerValue<'ll>, BasicTypeEnum<'ll>) {
         let OsdiCompilationUnit { inst_data, model_data, cx, module, .. } = self;
         match *inst_data.opvars.get_index(pos as usize).unwrap().1 {
             EvalOutput::Calculated(slot) => {
-                inst_data.eval_output_slot_ptr(llbuilder, inst_ptr, slot)
+                inst_data.eval_output_slot_ptr(builder, inst_ptr, slot)
             }
             EvalOutput::Const(val, slot) => {
-                let (ptr, ty) = inst_data.eval_output_slot_ptr(llbuilder, inst_ptr, slot.unwrap());
-                LLVMBuildStore(
-                    NonNull::from(llbuilder).as_ptr(),
-                    NonNull::from(cx.const_val(&val)).as_ptr(),
-                    NonNull::from(ptr).as_ptr(),
-                );
+                let (ptr, ty) = inst_data.eval_output_slot_ptr(builder, inst_ptr, slot.unwrap());
+                builder.build_store(ptr, cx.const_val(&val)).unwrap();
                 (ptr, ty)
             }
             EvalOutput::Param(param) => {
@@ -1028,22 +1010,16 @@ impl<'ll> OsdiCompilationUnit<'_, '_, 'll> {
                 let (kind, _) = intern.params.get_index(param).unwrap();
                 match *kind {
                     ParamKind::Param(param) => inst_data
-                        .param_ptr(OsdiInstanceParam::User(param), inst_ptr, llbuilder)
+                        .param_ptr(OsdiInstanceParam::User(param), inst_ptr, builder)
                         .unwrap_or_else(|| {
-                            model_data.param_ptr(param, model_ptr, llbuilder).unwrap()
+                            model_data.param_ptr(param, model_ptr, builder).unwrap()
                         }),
-                    ParamKind::Temperature => (
-                        &*LLVMBuildStructGEP2(
-                            NonNull::from(llbuilder).as_ptr(),
-                            NonNull::from(cx.ty_double()).as_ptr(),
-                            NonNull::from(inst_ptr).as_ptr(),
-                            TEMPERATURE,
-                            UNNAMED,
-                        ),
-                        cx.ty_double(),
-                    ),
+                    ParamKind::Temperature => {
+                        let ptr = builder.build_struct_gep(inst_data.ty, inst_ptr, TEMPERATURE, "temperature").unwrap();
+                        (ptr, cx.ty_double().into())
+                    }
                     ParamKind::ParamSysFun(func) => inst_data
-                        .param_ptr(OsdiInstanceParam::Builtin(func), inst_ptr, llbuilder)
+                        .param_ptr(OsdiInstanceParam::Builtin(func), inst_ptr, builder)
                         .unwrap(),
 
                     ParamKind::HiddenState(_) => todo!("hidden state"),
@@ -1060,7 +1036,7 @@ impl<'ll> OsdiCompilationUnit<'_, '_, 'll> {
                     | ParamKind::ImplicitUnknown(_) => unreachable!(),
                 }
             }
-            EvalOutput::Cache(slot) => inst_data.cache_slot_ptr(llbuilder, slot, inst_ptr),
+            EvalOutput::Cache(slot) => inst_data.cache_slot_ptr(builder, slot, inst_ptr),
         }
     }
 }
