@@ -721,8 +721,7 @@ impl<'ll> OsdiInstanceData<'ll> {
             builder.build_float_add(old, contrib, "add_contrib").unwrap()
         };
 
-        // Set fast math flags
-        val.set_fast_math_flags(inkwell::values::FloatMathFlags::all());
+        // TODO: Set fast math flags once inkwell exposes this API
         builder.build_store(dst, val).unwrap();
     }
 
@@ -787,8 +786,7 @@ impl<'ll> OsdiInstanceData<'ll> {
 
         // Add value to old
         let val = builder.build_float_add(old, val, "jacobian_add").unwrap();
-        // Set fast math flags on result
-        val.set_fast_math_flags(inkwell::values::FloatMathFlags::all());
+        // TODO: Set fast math flags once inkwell exposes this API
         // Store value where dst pointer points to
         builder.build_store(dst, val).unwrap();
     }
