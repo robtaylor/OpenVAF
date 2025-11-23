@@ -16,13 +16,13 @@ param "THETA"
 units = "", desc = "", flags = ParameterFlags(0x0)
 
 4 terminals
-node "d" units = "V", runits = ""
+node "d" units = "V", runits = "A"
 residual 112 4294967295 4294967295 4294967295
-node "g" units = "V", runits = ""
+node "g" units = "V", runits = "A"
 residual 4294967295 4294967295 4294967295 4294967295
-node "s" units = "V", runits = ""
+node "s" units = "V", runits = "A"
 residual 120 4294967295 4294967295 4294967295
-node "b" units = "V", runits = ""
+node "b" units = "V", runits = "A"
 residual 4294967295 4294967295 4294967295 4294967295
 jacobian (d, d) JacobianFlags(JACOBIAN_ENTRY_RESIST | JACOBIAN_ENTRY_REACT_CONST) react_ptr = 4294967295
 jacobian (d, g) JacobianFlags(JACOBIAN_ENTRY_RESIST | JACOBIAN_ENTRY_REACT_CONST) react_ptr = 4294967295
