@@ -1,26 +1,15 @@
 use core::ffi::c_uint;
-use core::ptr::NonNull;
 
 use ahash::RandomState;
 use hir::{CompilationDB, ParamSysFun, Parameter, Variable};
 use hir_lower::{HirInterner, LimitState, ParamKind, PlaceKind};
 use indexmap::IndexMap;
-use llvm_sys::core::{
-    LLVMBuildFAdd,
-    LLVMBuildFSub,
-    LLVMBuildGEP2,
-    LLVMBuildICmp,
-    LLVMBuildIntCast2,
-    LLVMBuildLoad2,
-    LLVMBuildStore,
-    LLVMBuildStructGEP2,
-    LLVMConstInt,
-    //    LLVMSetFastMath
-};
-use llvm_sys::target::{LLVMOffsetOfElement, LLVMTargetDataRef};
-use llvm_sys::LLVMIntPredicate;
+use inkwell::builder::Builder;
+use inkwell::types::{ArrayType, BasicTypeEnum, StructType};
+use inkwell::values::{BasicValueEnum, IntValue, PointerValue};
+use inkwell::IntPredicate;
 use mir::{strip_optbarrier, Const, Function, Param, ValueDef, F_ZERO};
-use mir_llvm::{CodegenCx, MemLoc, UNNAMED};
+use mir_llvm::{CodegenCx, MemLoc};
 use sim_back::dae::{self, MatrixEntryId, SimUnknown};
 use sim_back::init::CacheSlot;
 use stdx::packed_option::PackedOption;
@@ -201,20 +190,20 @@ impl NoiseSource {
 
 pub struct OsdiInstanceData<'ll> {
     /// llvm type for the instance data struct
-    pub ty: &'ll llvm_sys::LLVMType,
+    pub ty: StructType<'ll>,
 
     // llvm types for static (always present) instance data struct fields
-    pub param_given: &'ll llvm_sys::LLVMType,
-    pub jacobian_ptr: &'ll llvm_sys::LLVMType,
-    pub jacobian_ptr_react: &'ll llvm_sys::LLVMType,
-    pub node_mapping: &'ll llvm_sys::LLVMType,
-    pub state_idx: &'ll llvm_sys::LLVMType,
-    pub collapsed: &'ll llvm_sys::LLVMType,
+    pub param_given: ArrayType<'ll>,
+    pub jacobian_ptr: BasicTypeEnum<'ll>,
+    pub jacobian_ptr_react: BasicTypeEnum<'ll>,
+    pub node_mapping: BasicTypeEnum<'ll>,
+    pub state_idx: BasicTypeEnum<'ll>,
+    pub collapsed: BasicTypeEnum<'ll>,
 
     // llvm types for dynamic instance data struct fields
-    pub params: IndexMap<OsdiInstanceParam, &'ll llvm_sys::LLVMType, RandomState>,
-    pub eval_outputs: TiMap<EvalOutputSlot, mir::Value, &'ll llvm_sys::LLVMType>,
-    pub cache_slots: TiVec<CacheSlot, &'ll llvm_sys::LLVMType>,
+    pub params: IndexMap<OsdiInstanceParam, BasicTypeEnum<'ll>, RandomState>,
+    pub eval_outputs: TiMap<EvalOutputSlot, mir::Value, BasicTypeEnum<'ll>>,
+    pub cache_slots: TiVec<CacheSlot, BasicTypeEnum<'ll>>,
 
     pub residual: TiVec<SimUnknown, Residual>,
     pub noise: Vec<NoiseSource>,
