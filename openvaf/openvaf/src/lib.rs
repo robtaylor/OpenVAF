@@ -9,7 +9,7 @@ use basedb::BaseDB;
 use camino::Utf8PathBuf;
 use hir::CompilationDB;
 use linker::link;
-pub use llvm_sys::target_machine::LLVMCodeGenOptLevel;
+pub use mir_llvm::LLVMCodeGenOptLevel;
 use mir_llvm::LLVMBackend;
 pub use paths::AbsPathBuf;
 use sim_back::{collect_modules, print_intern, print_module};

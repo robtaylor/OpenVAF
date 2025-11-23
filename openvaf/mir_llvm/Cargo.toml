@@ -10,7 +10,7 @@ doctest = false
 
 
 [dependencies]
-inkwell = { version = "0.5", features = ["llvm19-0", "target-all"] } 
+inkwell = { version = "0.5", features = ["llvm18-0", "target-all"] } 
 #target-lexicon = "0.12"
 mir = { version = "0.0.0", path = "../mir" }
 target = { version = "0.0.0", path = "../target" }

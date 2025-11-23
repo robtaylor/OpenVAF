@@ -1,116 +1,109 @@
-use core::ptr::NonNull;
+use inkwell::types::BasicTypeEnum;
+use inkwell::values::{BasicValueEnum, FunctionValue};
 
 use crate::builder::Builder;
-use crate::{CodegenCx, UNNAMED};
-pub trait InlineCallbackBuilder<'ll> {
+use crate::CodegenCx;
+
+pub trait InlineCallbackBuilder<'ctx> {
     fn build_inline(
         &self,
-        builder: &Builder<'_, '_, 'll>,
-        state: &Box<[&'ll llvm_sys::LLVMValue]>,
-    ) -> &'ll llvm_sys::LLVMValue;
+        builder: &Builder<'_, '_, 'ctx>,
+        state: &[BasicValueEnum<'ctx>],
+    ) -> BasicValueEnum<'ctx>;
+
     fn return_type(
         &self,
-        builder: &Builder<'_, '_, 'll>,
-        state: &Box<[&'ll llvm_sys::LLVMValue]>,
-    ) -> &'ll llvm_sys::LLVMType;
-}
-
-impl<'ll> Clone for Box<dyn InlineCallbackBuilder<'ll>> {
-    fn clone(&self) -> Box<dyn InlineCallbackBuilder<'ll>> {
-        panic!("Box<dyn Trait> does not support Clone. Use Arc instead!");
-    }
+        builder: &Builder<'_, '_, 'ctx>,
+        state: &[BasicValueEnum<'ctx>],
+    ) -> BasicTypeEnum<'ctx>;
 }
 
 #[derive(Clone)]
-pub struct BuiltCallbackFun<'ll> {
-    pub fun_ty: &'ll llvm_sys::LLVMType,
-    pub fun: &'ll llvm_sys::LLVMValue,
+pub struct BuiltCallbackFun<'ctx> {
+    pub fun_ty: BasicTypeEnum<'ctx>,
+    pub fun: FunctionValue<'ctx>,
     /// Some Callbacks need to read/modify some state (typically passed as pointers)
     /// outside of the arguments provided in Verilog-A.
     /// These arguments are always passed before any arguments specified in the CFG
-    pub state: Box<[&'ll llvm_sys::LLVMValue]>,
+    pub state: Vec<BasicValueEnum<'ctx>>,
     pub num_state: u32,
 }
 
 #[derive(Clone)]
-pub enum CallbackFun<'ll> {
-    Inline { builder: Box<dyn InlineCallbackBuilder<'ll>>, state: Box<[&'ll llvm_sys::LLVMValue]> }, // Change llvm::Value to llvm_sys::LLVMValue
-    Prebuilt(BuiltCallbackFun<'ll>),
+pub enum CallbackFun<'ctx> {
+    Inline {
+        builder: Box<dyn InlineCallbackBuilder<'ctx>>,
+        state: Vec<BasicValueEnum<'ctx>>,
+    },
+    Prebuilt(BuiltCallbackFun<'ctx>),
 }
 
-impl<'ll> CodegenCx<'_, 'll> {
+impl<'a, 'ctx> CodegenCx<'a, 'ctx> {
     pub fn const_callback(
         &self,
-        args: &[&'ll llvm_sys::LLVMType],
-        val: &'ll llvm_sys::LLVMValue,
-    ) -> BuiltCallbackFun<'ll> {
+        args: &[BasicTypeEnum<'ctx>],
+        val: BasicValueEnum<'ctx>,
+    ) -> BuiltCallbackFun<'ctx> {
         let name = self.local_callback_name();
-        // println!("Creating const callback function: {}", name); // Logging the creation of the callback
-        let fun_ty = self.ty_func(args, self.val_ty(val));
+        let ret_ty = val.get_type();
+        let fun_ty = self.ty_func(args, ret_ty);
         let fun = self.declare_int_fn(&name, fun_ty);
-        unsafe {
-            let bb = llvm_sys::core::LLVMAppendBasicBlockInContext(
-                NonNull::from(self.llcx).as_ptr(),
-                NonNull::from(fun).as_ptr(),
-                UNNAMED,
-            );
-            let builder =
-                llvm_sys::core::LLVMCreateBuilderInContext(NonNull::from(self.llcx).as_ptr());
-            llvm_sys::core::LLVMPositionBuilderAtEnd(builder, bb);
-            llvm_sys::core::LLVMBuildRet(builder, NonNull::from(val).as_ptr());
-            llvm_sys::core::LLVMDisposeBuilder(builder);
-        }
 
-        BuiltCallbackFun { fun_ty, fun, state: Box::new([]), num_state: 0 }
+        let basic_block = self.context.append_basic_block(fun, "entry");
+        let builder = self.context.create_builder();
+        builder.position_at_end(basic_block);
+        builder.build_return(Some(&val)).unwrap();
+
+        BuiltCallbackFun {
+            fun_ty: ret_ty,
+            fun,
+            state: Vec::new(),
+            num_state: 0,
+        }
     }
 
-    pub fn trivial_callbacks(&self, args: &[&'ll llvm_sys::LLVMType]) -> BuiltCallbackFun<'ll> {
+    pub fn trivial_callbacks(&self, args: &[BasicTypeEnum<'ctx>]) -> BuiltCallbackFun<'ctx> {
         let name = self.local_callback_name();
-        //println!("Generating trivial callback with name: {}", name); // Log when trivial callback is generated.
-        let fun_ty = self.ty_func(args, self.ty_void());
+        let fun_ty = self.ty_func(args, self.ty_void().into());
         let fun = self.declare_int_fn(&name, fun_ty);
-        unsafe {
-            let bb = llvm_sys::core::LLVMAppendBasicBlockInContext(
-                NonNull::from(self.llcx).as_ptr(),
-                NonNull::from(fun).as_ptr(),
-                UNNAMED,
-            );
-            let builder =
-                llvm_sys::core::LLVMCreateBuilderInContext(NonNull::from(self.llcx).as_ptr());
-            llvm_sys::core::LLVMPositionBuilderAtEnd(builder, bb);
-            llvm_sys::core::LLVMBuildRetVoid(builder);
-            llvm_sys::core::LLVMDisposeBuilder(builder);
-        }
 
-        BuiltCallbackFun { fun_ty, fun, state: Box::new([]), num_state: 0 }
+        let basic_block = self.context.append_basic_block(fun, "entry");
+        let builder = self.context.create_builder();
+        builder.position_at_end(basic_block);
+        builder.build_return(None).unwrap();
+
+        BuiltCallbackFun {
+            fun_ty: self.ty_void().into(),
+            fun,
+            state: Vec::new(),
+            num_state: 0,
+        }
     }
 
     pub fn const_return(
         &self,
-        args: &[&'ll llvm_sys::LLVMType],
+        args: &[BasicTypeEnum<'ctx>],
         idx: usize,
-    ) -> BuiltCallbackFun<'ll> {
+    ) -> BuiltCallbackFun<'ctx> {
         let name = self.local_callback_name();
         let fun_ty = self.ty_func(args, args[idx]);
         let fun = self.declare_int_fn(&name, fun_ty);
-        unsafe {
-            let bb = llvm_sys::core::LLVMAppendBasicBlockInContext(
-                NonNull::from(self.llcx).as_ptr(),
-                NonNull::from(fun).as_ptr(),
-                UNNAMED,
-            );
-            let builder =
-                llvm_sys::core::LLVMCreateBuilderInContext(NonNull::from(self.llcx).as_ptr());
-            llvm_sys::core::LLVMPositionBuilderAtEnd(builder, bb);
-            let val = llvm_sys::core::LLVMGetParam(NonNull::from(fun).as_ptr(), idx as u32);
-            llvm_sys::core::LLVMBuildRet(builder, val);
-            llvm_sys::core::LLVMDisposeBuilder(builder);
+
+        let basic_block = self.context.append_basic_block(fun, "entry");
+        let builder = self.context.create_builder();
+        builder.position_at_end(basic_block);
+        let param = fun.get_nth_param(idx as u32).unwrap();
+        builder.build_return(Some(&param)).unwrap();
+
+        BuiltCallbackFun {
+            fun_ty: args[idx],
+            fun,
+            state: Vec::new(),
+            num_state: 0,
         }
-        BuiltCallbackFun { fun_ty, fun, state: Box::new([]), num_state: 0 }
     }
 
     pub fn local_callback_name(&self) -> String {
-        let name = self.generate_local_symbol_name("cb");
-        name
+        self.generate_local_symbol_name("cb")
     }
 }

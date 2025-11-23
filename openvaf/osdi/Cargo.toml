@@ -24,7 +24,7 @@ mir_llvm = { version = "0.0.0", path = "../mir_llvm" }
 syntax = { version = "0.0.0", path = "../syntax" }
 
 #llvm = { version = "0.0.0", path = "../llvm" }
-inkwell = { version = "0.5", features = ["llvm19-0", "target-all"] }
+inkwell = { version = "0.5", features = ["llvm18-0", "target-all"] }
 target = { version = "0.0.0", path = "../target"}
 
 typed-index-collections = "3.1"
