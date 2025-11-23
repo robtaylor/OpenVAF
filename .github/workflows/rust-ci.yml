@@ -192,7 +192,7 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            macos: 13
+            macos: 14
           - arch: x86_64
             macos: 13
     runs-on: macos-${{ matrix.macos }}
