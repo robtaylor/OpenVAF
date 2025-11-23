@@ -112,6 +112,8 @@ jobs:
     #   run: cargo clippy -- -D warnings
     - name: Run tests
       run: cargo test --release
+    - name: Run integration tests
+      run: cargo test --release --test integration
 
   msys2-build-test:
     strategy:
@@ -161,6 +163,7 @@ jobs:
         # export SCCACHE_PATH=$(which sccache)
         # echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
         echo "RUSTC_WRAPPER=${SCCACHE_PATH}" >> $GITHUB_ENV
+
     - name: "Cache cargo"
       id: cache-cargo
       uses: "actions/cache@v4"
@@ -240,4 +243,7 @@ jobs:
 
     - name: Run tests
       run: cargo test --release
+
+    - name: Run integration tests
+      run: cargo test --release --test integration
 
