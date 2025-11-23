@@ -1,7 +1,9 @@
+use std::hash::BuildHasherDefault;
 use std::iter::FilterMap;
 
 use ahash::{AHashMap, AHashSet};
 use bitset::HybridBitSet;
+use rustc_hash::FxHasher;
 pub use callbacks::{CallBackKind, NoiseTable, ParamInfoKind, RetFlag};
 use hir::{
     Branch, BranchWrite, CompilationDB, Module, Node, ParamSysFun, Parameter, Type, Variable,
@@ -220,13 +222,13 @@ impl_debug_display! {
 
 /// A mapping between abstractions used in the MIR and the corresponding
 /// information from the HIR. This allows the MIR to remain independent of the frontend/HIR
-#[derive(Debug, PartialEq, Default, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct HirInterner {
-    pub outputs: IndexMap<PlaceKind, PackedOption<Value>, ahash::RandomState>,
+    pub outputs: IndexMap<PlaceKind, PackedOption<Value>, BuildHasherDefault<FxHasher>>,
     pub params: TiMap<Param, ParamKind, Value>,
     pub callbacks: TiSet<FuncRef, CallBackKind>,
     pub callback_uses: TiVec<FuncRef, Vec<Inst>>,
-    pub tagged_reads: IndexMap<Value, Variable, ahash::RandomState>,
+    pub tagged_reads: IndexMap<Value, Variable, BuildHasherDefault<FxHasher>>,
     pub implicit_equations: TiVec<ImplicitEquation, ImplicitEquationKind>,
     pub lim_state: TiMap<LimitState, Value, Vec<(Value, bool)>>,
 }
@@ -235,6 +237,20 @@ pub type LiveParams<'a> = FilterMap<
     map::Iter<'a, Param, ParamKind, Value>,
     fn((Param, (&'a ParamKind, &'a Value))) -> Option<(Param, &'a ParamKind, Value)>,
 >;
+
+impl Default for HirInterner {
+    fn default() -> Self {
+        Self {
+            outputs: IndexMap::with_hasher(BuildHasherDefault::<FxHasher>::default()),
+            params: TiMap::default(),
+            callbacks: TiSet::default(),
+            callback_uses: TiVec::default(),
+            tagged_reads: IndexMap::with_hasher(BuildHasherDefault::<FxHasher>::default()),
+            implicit_equations: TiVec::default(),
+            lim_state: TiMap::default(),
+        }
+    }
+}
 
 impl HirInterner {
     fn contains_ddx(
