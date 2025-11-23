@@ -1,6 +1,6 @@
 use inkwell::context::Context;
 use inkwell::types::{
-    AnyType, AnyTypeEnum, ArrayType, BasicType, BasicTypeEnum, FloatType, FunctionType, IntType,
+    ArrayType, BasicType, BasicTypeEnum, FloatType, FunctionType, IntType,
     PointerType, StructType, VoidType,
 };
 use inkwell::values::{BasicValue, BasicValueEnum, IntValue, PointerValue};
@@ -114,11 +114,13 @@ impl<'a, 'ctx> CodegenCx<'a, 'ctx> {
     }
 
     pub fn ty_func(&self, args: &[BasicTypeEnum<'ctx>], ret: BasicTypeEnum<'ctx>) -> FunctionType<'ctx> {
-        ret.fn_type(args, false)
+        let meta_args: Vec<_> = args.iter().map(|t| (*t).into()).collect();
+        ret.fn_type(&meta_args, false)
     }
 
     pub fn ty_variadic_func(&self, args: &[BasicTypeEnum<'ctx>], ret: BasicTypeEnum<'ctx>) -> FunctionType<'ctx> {
-        ret.fn_type(args, true)
+        let meta_args: Vec<_> = args.iter().map(|t| (*t).into()).collect();
+        ret.fn_type(&meta_args, true)
     }
 
     pub fn ty_array(&self, ty: BasicTypeEnum<'ctx>, len: u32) -> ArrayType<'ctx> {
@@ -210,7 +212,15 @@ impl<'a, 'ctx> CodegenCx<'a, 'ctx> {
     }
 
     pub fn const_undef(&self, t: BasicTypeEnum<'ctx>) -> BasicValueEnum<'ctx> {
-        t.get_undef()
+        // get_undef doesn't exist in inkwell, use const_zero or type-specific methods
+        match t {
+            BasicTypeEnum::ArrayType(t) => t.const_zero().into(),
+            BasicTypeEnum::FloatType(t) => t.const_zero().into(),
+            BasicTypeEnum::IntType(t) => t.const_zero().into(),
+            BasicTypeEnum::PointerType(t) => t.const_null().into(),
+            BasicTypeEnum::StructType(t) => t.const_zero().into(),
+            BasicTypeEnum::VectorType(t) => t.const_zero().into(),
+        }
     }
 
     pub fn val_ty(&self, v: BasicValueEnum<'ctx>) -> BasicTypeEnum<'ctx> {

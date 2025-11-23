@@ -1,10 +1,7 @@
-use std::error::Error;
-use std::fmt::{self, Display, Formatter};
 use std::path::Path;
 
 use inkwell::context::Context;
 use inkwell::module::Module;
-use inkwell::passes::PassManager;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple};
 use inkwell::OptimizationLevel;
 use lasso::Rodeo;
@@ -106,14 +103,11 @@ impl<'ctx> ModuleLlvm<'ctx> {
 
         let module = context.create_module(name);
 
-        // Set data layout
-        module.set_data_layout(&target.data_layout.parse().map_err(|e| format!("Invalid data layout: {:?}", e))?);
-
         // Set target triple
         let triple = TargetTriple::create(&target.llvm_target);
         module.set_triple(&triple);
 
-        // Create target machine
+        // Create target machine first so we can get the data layout from it
         let target_obj = Target::from_triple(&triple)
             .map_err(|e| e.to_string())?;
 
@@ -127,6 +121,9 @@ impl<'ctx> ModuleLlvm<'ctx> {
                 CodeModel::Default,
             )
             .ok_or_else(|| format!("Could not create target machine for {}", target.llvm_target))?;
+
+        // Set data layout from target machine
+        module.set_data_layout(&target_machine.get_target_data().get_data_layout());
 
         Ok(ModuleLlvm {
             context,
@@ -150,13 +147,11 @@ impl<'ctx> ModuleLlvm<'ctx> {
     }
 
     pub fn optimize(&self) {
-        let pass_manager_builder = inkwell::passes::PassManagerBuilder::create();
-        pass_manager_builder.set_optimization_level(self.opt_lvl);
-
-        let pass_manager = PassManager::create(());
-        pass_manager_builder.populate_module_pass_manager(&pass_manager);
-
-        pass_manager.run_on(&self.module);
+        // Note: PassManagerBuilder was removed in LLVM 18+
+        // For now, we'll skip optimization in this stub
+        // TODO: Implement new pass manager API when inkwell adds support
+        // or use the command-line pass pipeline
+        log::warn!("Optimization pass skipped - PassManagerBuilder not available in LLVM 18+");
     }
 
     pub fn verify_and_print(&self) -> bool {

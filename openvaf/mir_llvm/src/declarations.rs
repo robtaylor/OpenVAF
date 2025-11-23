@@ -31,7 +31,7 @@ impl<'a, 'ctx> CodegenCx<'a, 'ctx> {
 
         let func = self.module.add_function(name, fn_type, Some(Linkage::Internal));
         func.set_call_conventions(inkwell::llvm_sys::LLVMCallConv::LLVMFastCallConv as u32);
-        func.set_unnamed_addr(true);
+        // Note: set_unnamed_addr not available in inkwell 0.5
         func
     }
 
@@ -43,7 +43,7 @@ impl<'a, 'ctx> CodegenCx<'a, 'ctx> {
 
         let func = self.module.add_function(name, fn_type, Some(Linkage::Internal));
         func.set_call_conventions(inkwell::llvm_sys::LLVMCallConv::LLVMCCallConv as u32);
-        func.set_unnamed_addr(true);
+        // Note: set_unnamed_addr not available in inkwell 0.5
         func
     }
 

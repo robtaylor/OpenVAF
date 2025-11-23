@@ -5,7 +5,7 @@ use inkwell::context::Context;
 use inkwell::memory_buffer::MemoryBuffer;
 use inkwell::module::Module;
 use inkwell::types::BasicTypeEnum;
-use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue, GlobalValue, PointerValue};
+use inkwell::values::{FunctionValue, PointerValue};
 use lasso::{Rodeo, Spur};
 use target::spec::Target;
 

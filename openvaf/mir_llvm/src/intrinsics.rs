@@ -1,4 +1,4 @@
-use inkwell::types::{BasicTypeEnum, FunctionType};
+use inkwell::types::BasicTypeEnum;
 use inkwell::values::FunctionValue;
 
 use crate::CodegenCx;

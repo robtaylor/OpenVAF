@@ -1,8 +1,8 @@
 use inkwell::basic_block::BasicBlock;
 use inkwell::types::BasicTypeEnum;
-use inkwell::values::{BasicValue, BasicValueEnum, IntValue, PointerValue};
-use mir::{Block, ControlFlowGraph, FuncRef, Function, Param, PhiNode, Value};
-use typed_index_collections::TiVec;
+use inkwell::values::{BasicValueEnum, IntValue, PointerValue};
+use mir::{Block, FuncRef, Function, Param, PhiNode, Value};
+use typed_index_collections::{TiSliceIndex, TiVec};
 
 use crate::callbacks::CallbackFun;
 use crate::CodegenCx;
@@ -96,7 +96,7 @@ impl<'ctx> BuilderVal<'ctx> {
         }
     }
 
-    pub fn get_ty(&self, builder: &Builder<'_, '_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+    pub fn get_ty(&self, _builder: &Builder<'_, '_, 'ctx>) -> Option<BasicTypeEnum<'ctx>> {
         match self {
             BuilderVal::Undef => None,
             BuilderVal::Eager(val) => Some(val.get_type()),
@@ -142,8 +142,8 @@ impl<'a, 'cx, 'ctx> Builder<'a, 'cx, 'ctx> {
         let inkwell_builder = cx.context.create_builder();
 
         let mut blocks: TiVec<_, _> = vec![None; mir_func.layout.num_blocks()].into();
-        for bb in mir_func.layout.blocks() {
-            blocks[bb] = Some(cx.context.append_basic_block(llfunc, &format!("bb{}", bb.index())));
+        for (idx, bb) in mir_func.layout.blocks().enumerate() {
+            blocks[bb] = Some(cx.context.append_basic_block(llfunc, &format!("bb{}", idx)));
         }
 
         inkwell_builder.position_at_end(entry);

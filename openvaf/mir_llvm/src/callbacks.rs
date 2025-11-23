@@ -29,13 +29,24 @@ pub struct BuiltCallbackFun<'ctx> {
     pub num_state: u32,
 }
 
-#[derive(Clone)]
+// Note: Cannot derive Clone because dyn InlineCallbackBuilder doesn't impl Clone
 pub enum CallbackFun<'ctx> {
     Inline {
         builder: Box<dyn InlineCallbackBuilder<'ctx>>,
         state: Vec<BasicValueEnum<'ctx>>,
     },
     Prebuilt(BuiltCallbackFun<'ctx>),
+}
+
+impl<'ctx> Clone for CallbackFun<'ctx> {
+    fn clone(&self) -> Self {
+        match self {
+            CallbackFun::Inline { .. } => {
+                panic!("CallbackFun::Inline does not support clone - use Prebuilt instead")
+            }
+            CallbackFun::Prebuilt(cb) => CallbackFun::Prebuilt(cb.clone()),
+        }
+    }
 }
 
 impl<'a, 'ctx> CodegenCx<'a, 'ctx> {
@@ -64,7 +75,9 @@ impl<'a, 'ctx> CodegenCx<'a, 'ctx> {
 
     pub fn trivial_callbacks(&self, args: &[BasicTypeEnum<'ctx>]) -> BuiltCallbackFun<'ctx> {
         let name = self.local_callback_name();
-        let fun_ty = self.ty_func(args, self.ty_void().into());
+        // For void functions, we need to use void_type().fn_type() directly
+        let meta_args: Vec<_> = args.iter().map(|t| (*t).into()).collect();
+        let fun_ty = self.context.void_type().fn_type(&meta_args, false);
         let fun = self.declare_int_fn(&name, fun_ty);
 
         let basic_block = self.context.append_basic_block(fun, "entry");
@@ -73,7 +86,7 @@ impl<'a, 'ctx> CodegenCx<'a, 'ctx> {
         builder.build_return(None).unwrap();
 
         BuiltCallbackFun {
-            fun_ty: self.ty_void().into(),
+            fun_ty: self.ty_int().into(), // Use a placeholder type since void can't convert to BasicTypeEnum
             fun,
             state: Vec::new(),
             num_state: 0,
