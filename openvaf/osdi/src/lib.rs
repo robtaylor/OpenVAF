@@ -3,6 +3,11 @@ use std::ffi::CString;
 use std::ptr::NonNull;
 use std::sync::{Arc, Mutex};
 
+use inkwell::module::Linkage;
+use inkwell::targets::TargetData;
+use inkwell::types::BasicTypeEnum;
+use inkwell::values::BasicValueEnum;
+
 use base_n::CASE_INSENSITIVE;
 use camino::{Utf8Path, Utf8PathBuf};
 use hir::{CompilationDB, ParamSysFun, Type};
@@ -78,10 +83,8 @@ pub fn compile<'a>(
         })
         .collect();
 
-    let target_data = unsafe {
-        let src = CString::new(target.data_layout.clone()).unwrap();
-        &*llvm_sys::target::LLVMCreateTargetData(src.as_ptr())
-    };
+    // Create target data from the data layout string
+    let target_data = TargetData::create(&target.data_layout);
 
     let compiled_modules = modules;
 
@@ -332,24 +335,13 @@ pub fn compile<'a>(
         let osdi_log =
             cx.get_declared_value("osdi_log").expect("symbol osdi_log missing from std lib");
         let val = cx.const_null_ptr();
-        unsafe {
-            llvm_sys::core::LLVMSetInitializer(
-                NonNull::from(osdi_log).as_ptr(),
-                NonNull::from(val).as_ptr(),
-            );
-            llvm_sys::core::LLVMSetLinkage(
-                NonNull::from(osdi_log).as_ptr(),
-                llvm_sys::LLVMLinkage::LLVMExternalLinkage,
-            );
-            llvm_sys::core::LLVMSetUnnamedAddress(
-                NonNull::from(osdi_log).as_ptr(),
-                llvm_sys::LLVMUnnamedAddr::LLVMNoUnnamedAddr,
-            );
-            llvm_sys::core::LLVMSetDLLStorageClass(
-                NonNull::from(osdi_log).as_ptr(),
-                llvm_sys::LLVMDLLStorageClass::LLVMDLLExportStorageClass,
-            );
-        }
+
+        // Set up osdi_log global using inkwell
+        let global = osdi_log.as_pointer_value().as_global_value().unwrap();
+        global.set_initializer(&val);
+        global.set_linkage(Linkage::External);
+        global.set_unnamed_addr(false);
+        global.set_dll_storage_class(inkwell::DLLStorageClass::Export);
 
         debug_assert!(llmod.verify_and_print());
 
@@ -382,7 +374,7 @@ pub fn compile<'a>(
     }
 
     paths.push(main_file);
-    unsafe { LLVMDisposeTargetData(NonNull::from(target_data).as_ptr()) };
+    // target_data is now managed by inkwell and will be dropped automatically
     (paths, compiled_modules, literals)
 }
 
@@ -445,19 +437,19 @@ fn ty_len(ty: &Type) -> Option<u32> {
     }
 }
 
-fn lltype<'ll>(ty: &Type, cx: &CodegenCx<'_, 'll>) -> &'ll llvm_sys::LLVMType {
+fn lltype<'ll>(ty: &Type, cx: &CodegenCx<'_, 'll>) -> BasicTypeEnum<'ll> {
     let llty = match ty.base_type() {
-        Type::Real => cx.ty_double(),
-        Type::Integer => cx.ty_int(),
-        Type::String => cx.ty_ptr(),
-        Type::EmptyArray => cx.ty_array(cx.ty_int(), 0),
-        Type::Bool => cx.ty_c_bool(),
-        Type::Void => cx.ty_void(),
+        Type::Real => cx.ty_double().into(),
+        Type::Integer => cx.ty_int().into(),
+        Type::String => cx.ty_ptr().into(),
+        Type::EmptyArray => cx.ty_array(cx.ty_int(), 0).into(),
+        Type::Bool => cx.ty_c_bool().into(),
+        Type::Void => panic!("Void type cannot be converted to BasicTypeEnum"),
         Type::Err | Type::Array { .. } => unreachable!(),
     };
 
     if let Some(len) = ty_len(ty) {
-        cx.ty_array(llty, len)
+        cx.ty_array(llty.try_into().unwrap(), len).into()
     } else {
         llty
     }
