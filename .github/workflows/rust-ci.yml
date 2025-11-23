@@ -81,7 +81,8 @@ jobs:
         echo "LLVM_SYS_181_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
         echo "CLANG_PATH=/usr/lib/llvm-18/bin/clang" >> $GITHUB_ENV
         echo "PATH=/usr/lib/llvm-18/bin:$PATH" >> $GITHUB_ENV
-          echo "RUST_BACKTRACE=1" >> $GITHUB_ENV
+        echo "RUST_BACKTRACE=1" >> $GITHUB_ENV
+        echo "RUN_DEV_TESTS=1" >> $GITHUB_ENV
     - name: "Cache cargo"
       id: cache-cargo
       uses: "actions/cache@v4"
@@ -110,6 +111,8 @@ jobs:
     #   run: cargo clippy -- -D warnings
     - name: Run tests
       run: cargo test --release
+    - name: Run integration tests
+      run: cargo test --release --test integration
 
   msys2-build-test:
     strategy:
@@ -157,6 +160,7 @@ jobs:
         # export SCCACHE_PATH=$(which sccache)
         # echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
         echo "RUSTC_WRAPPER=${SCCACHE_PATH}" >> $GITHUB_ENV
+
     - name: "Cache cargo"
       id: cache-cargo
       uses: "actions/cache@v4"
@@ -192,18 +196,27 @@ jobs:
           - arch: x86_64
             macos: 13
     runs-on: macos-${{ matrix.macos }}
+    needs: [format, machete]
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Install pkg-config with Homebrew
+    - name: Install dependencies with Homebrew
       run: |
-        brew install pkg-config mingw-w64 sccache llvm
-        echo "$(brew --prefix llvm)/bin" >> $GITHUB_PATH
+        brew install pkg-config mingw-w64 sccache llvm@18
+        echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
+
+    - name: Set LLVM environment variables
+      run: |
+        echo "LLVM_SYS_181_PREFIX=$(brew --prefix llvm@18)" >> $GITHUB_ENV
+        echo "RUST_BACKTRACE=1" >> $GITHUB_ENV
+        echo "RUN_DEV_TESTS=1" >> $GITHUB_ENV
+
     - name: sccache setup
       run: |
         # echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
         echo "RUSTC_WRAPPER=$(which sccache)" >> $GITHUB_ENV
+
     - name: "Cache cargo"
       id: cache-cargo
       uses: "actions/cache@v4"
@@ -217,11 +230,13 @@ jobs:
         save-always: true
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-
-    
 
     - name: Build
       run: cargo build --release
 
     - name: Run tests
       run: cargo test --release
+
+    - name: Run integration tests
+      run: cargo test --release --test integration
 
