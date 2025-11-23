@@ -5,7 +5,7 @@ use inkwell::context::Context;
 use inkwell::memory_buffer::MemoryBuffer;
 use inkwell::module::Module;
 use inkwell::types::BasicTypeEnum;
-use inkwell::values::{FunctionValue, PointerValue};
+use inkwell::values::{BasicValue, FunctionValue, PointerValue};
 use lasso::{Rodeo, Spur};
 use target::spec::Target;
 
@@ -99,5 +99,44 @@ impl CodegenCx<'_, '_> {
         name.push('.');
         base_n::push_str(idx as u128, base_n::ALPHANUMERIC_ONLY, &mut name);
         name
+    }
+
+    /// Export a global value with the given name, type, and value
+    pub fn export_val(
+        &self,
+        name: &str,
+        ty: BasicTypeEnum,
+        value: impl BasicValue,
+        constant: bool,
+    ) {
+        let global = self.define_global(name, ty)
+            .unwrap_or_else(|| panic!("symbol {} already defined", name));
+
+        global.set_initializer(&value.as_basic_value_enum());
+        global.set_constant(constant);
+        global.set_linkage(inkwell::module::Linkage::External);
+        global.set_dll_storage_class(inkwell::DLLStorageClass::Export);
+    }
+
+    /// Export an array of values as a global constant
+    pub fn export_array(
+        &self,
+        name: &str,
+        elem_ty: BasicTypeEnum,
+        values: &[impl BasicValue],
+        constant: bool,
+        _external: bool, // Currently unused, kept for API compatibility
+    ) {
+        let vals: Vec<_> = values.iter().map(|v| v.as_basic_value_enum()).collect();
+        let arr = self.const_arr(elem_ty, &vals);
+        let arr_ty = arr.get_type();
+
+        let global = self.define_global(name, arr_ty.into())
+            .unwrap_or_else(|| panic!("symbol {} already defined", name));
+
+        global.set_initializer(&arr);
+        global.set_constant(constant);
+        global.set_linkage(inkwell::module::Linkage::External);
+        global.set_dll_storage_class(inkwell::DLLStorageClass::Export);
     }
 }
