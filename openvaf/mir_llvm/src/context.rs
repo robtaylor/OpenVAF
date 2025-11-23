@@ -1,136 +1,88 @@
 use std::cell::{Cell, RefCell};
-use std::ffi::CString;
-use std::ptr::NonNull;
 
 use ahash::AHashMap;
+use inkwell::context::Context;
+use inkwell::memory_buffer::MemoryBuffer;
+use inkwell::module::Module;
+use inkwell::types::BasicTypeEnum;
+use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue, GlobalValue, PointerValue};
 use lasso::{Rodeo, Spur};
-use libc::{c_char, c_uint};
-use llvm_sys::bit_reader::LLVMParseBitcodeInContext2;
-//use llvm_sys::LLVMBool; // For False, if applicable
-use llvm_sys::core::{LLVMCreateMemoryBufferWithMemoryRange, LLVMGetNamedFunction};
-use llvm_sys::linker::LLVMLinkModules2;
-use llvm_sys::{LLVMType as Type, LLVMValue as Value};
 use target::spec::Target;
 
 use crate::types::Types;
-use crate::LLVMString;
 
-pub struct CodegenCx<'a, 'll> {
-    pub llmod: &'ll llvm_sys::LLVMModule,
-    pub llcx: &'ll llvm_sys::LLVMContext,
-
+pub struct CodegenCx<'a, 'ctx> {
+    pub module: &'ctx Module<'ctx>,
+    pub context: &'ctx Context,
     pub target: &'a Target,
-    // pub target_cpu: &'a str,
     pub literals: &'a Rodeo,
-    str_lit_cache: RefCell<AHashMap<Spur, &'ll Value>>,
-    pub(crate) intrinsics: RefCell<AHashMap<&'static str, (&'ll Type, &'ll Value)>>,
+    str_lit_cache: RefCell<AHashMap<Spur, PointerValue<'ctx>>>,
+    pub(crate) intrinsics: RefCell<AHashMap<&'static str, (BasicTypeEnum<'ctx>, FunctionValue<'ctx>)>>,
     pub(crate) local_gen_sym_counter: Cell<u32>,
-    pub(crate) tys: Types<'ll>,
+    pub(crate) tys: Types<'ctx>,
 }
 
-impl<'a, 'll> CodegenCx<'a, 'll> {
+impl<'a, 'ctx> CodegenCx<'a, 'ctx> {
     pub(crate) fn new(
         literals: &'a Rodeo,
-        llvm_module: &'ll crate::ModuleLlvm,
+        llvm_module: &'ctx crate::ModuleLlvm<'ctx>,
         target: &'a Target,
-        // target_cpu: &'a str,
-    ) -> CodegenCx<'a, 'll> {
-        // let ty_isize =
-        //     unsafe { llvm_sys::core::LLVMIntTypeInContext(llvm_module.llcx, target.pointer_width) };
+    ) -> CodegenCx<'a, 'ctx> {
         CodegenCx {
-            llmod: llvm_module.llmod(),
-            llcx: unsafe { &*llvm_module.llcx },
+            module: llvm_module.module(),
+            context: llvm_module.context(),
             str_lit_cache: RefCell::new(AHashMap::with_capacity(literals.len())),
             literals,
             intrinsics: RefCell::new(AHashMap::new()),
             local_gen_sym_counter: Cell::new(0),
-            // target_cpu,
             target,
-            tys: Types::new(unsafe { &*llvm_module.llcx }, target.pointer_width),
+            tys: Types::new(llvm_module.context(), target.pointer_width),
         }
     }
 
-    pub fn get_func_by_name(&self, name: &str) -> Option<&'ll Value> {
-        let name = CString::new(name).unwrap();
-        unsafe {
-            let ptr = LLVMGetNamedFunction(NonNull::from(self.llmod).as_ptr(), name.as_ptr());
-            if ptr.is_null() {
-                None
-            } else {
-                Some(&*(ptr as *const Value))
-            }
-        }
+    pub fn get_func_by_name(&self, name: &str) -> Option<FunctionValue<'ctx>> {
+        self.module.get_function(name)
     }
 
     pub fn include_bitcode(&self, bitcode: &[u8]) {
         let sym = self.generate_local_symbol_name("bitcode_buffer");
-        let sym = CString::new(sym).unwrap();
-        unsafe {
-            let buff = LLVMCreateMemoryBufferWithMemoryRange(
-                bitcode.as_ptr() as *const c_char,
-                bitcode.len(),
-                sym.as_ptr(),
-                0,
-            );
-            let mut module: *mut llvm_sys::LLVMModule = std::ptr::null_mut();
-            assert!(
-                LLVMParseBitcodeInContext2(NonNull::from(self.llcx).as_ptr(), buff, &mut module)
-                    == 0,
-                "failed to parse bitcode"
-            );
-            assert!(!module.is_null(), "parsed module is null");
-            assert!(
-                LLVMLinkModules2(NonNull::from(self.llmod).as_ptr(), module) == 0,
-                "failed to link parsed bitcode"
-            );
-        }
-    }
-    pub fn to_str(&self) -> LLVMString {
-        unsafe {
-            LLVMString::new(llvm_sys::core::LLVMPrintModuleToString(
-                NonNull::from(self.llmod).as_ptr(),
-            ))
-        }
+        let buffer = MemoryBuffer::create_from_memory_range(bitcode, &sym);
+        let parsed_module = Module::parse_bitcode_from_buffer(&buffer, self.context)
+            .expect("failed to parse bitcode");
+
+        self.module.link_in_module(parsed_module)
+            .expect("failed to link parsed bitcode");
     }
 
-    pub fn const_str_uninterned(&self, lit: &str) -> &'ll Value {
+    pub fn to_str(&self) -> String {
+        self.module.print_to_string().to_string()
+    }
+
+    pub fn const_str_uninterned(&self, lit: &str) -> PointerValue<'ctx> {
         let lit = self.literals.get(lit).unwrap();
         self.const_str(lit)
     }
 
-    pub fn const_str(&self, lit: Spur) -> &'ll Value {
+    pub fn const_str(&self, lit: Spur) -> PointerValue<'ctx> {
         if let Some(val) = self.str_lit_cache.borrow().get(&lit) {
-            return val;
+            return *val;
         }
 
-        let val = self.literals.resolve(&lit).as_bytes().to_owned();
+        let val = self.literals.resolve(&lit);
+        let const_string = self.context.const_string(val.as_bytes(), false);
 
-        // assert!(!val.contains(&b'\0'));
-        // val.push(b'\0');
-        let val = unsafe {
-            llvm_sys::core::LLVMConstStringInContext(
-                NonNull::from(self.llcx).as_ptr(),
-                val.as_ptr() as *const c_char,
-                val.len() as c_uint,
-                0,
-            )
-        };
         let sym = self.generate_local_symbol_name("str");
-        let ty = self.val_ty(unsafe { &*val });
         let global = self
-            .define_global(&sym, ty)
+            .define_global(&sym, const_string.get_type().into())
             .unwrap_or_else(|| unreachable!("symbol {} already defined", sym));
 
-        unsafe {
-            llvm_sys::core::LLVMSetInitializer(NonNull::from(global).as_ptr(), val);
-            llvm_sys::core::LLVMSetGlobalConstant(NonNull::from(global).as_ptr(), 1);
-            llvm_sys::core::LLVMSetLinkage(
-                NonNull::from(global).as_ptr(),
-                llvm_sys::LLVMLinkage::LLVMInternalLinkage,
-            );
-        }
-        self.str_lit_cache.borrow_mut().insert(lit, global);
-        global
+        global.set_initializer(&const_string);
+        global.set_constant(true);
+        global.set_linkage(inkwell::module::Linkage::Internal);
+
+        let ptr = global.as_pointer_value();
+        self.str_lit_cache.borrow_mut().insert(lit, ptr);
+        ptr
     }
 }
 
