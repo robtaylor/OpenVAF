@@ -93,9 +93,8 @@ fn linker_with_args<'a>(
             let llvm_lld = PathBuf::from(llvm_prefix).join("bin/ld64.lld");
             if llvm_lld.exists() {
                 // Detect SDK path using xcrun
-                if let Ok(output) = std::process::Command::new("xcrun")
-                    .args(["--show-sdk-path"])
-                    .output()
+                if let Ok(output) =
+                    std::process::Command::new("xcrun").args(["--show-sdk-path"]).output()
                 {
                     if output.status.success() {
                         if let Ok(sdk_path) = String::from_utf8(output.stdout) {
