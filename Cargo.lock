@@ -166,6 +166,7 @@ dependencies = [
  "indexmap 2.10.0",
  "mini_harness",
  "parking_lot",
+ "rustc-hash 2.1.1",
  "salsa",
  "stdx",
  "syntax",
@@ -543,6 +544,7 @@ dependencies = [
  "once_cell",
  "ordered-float",
  "parking_lot",
+ "rustc-hash 2.1.1",
  "salsa",
  "stdx",
  "syntax",
@@ -824,6 +826,7 @@ dependencies = [
  "indexmap 2.10.0",
  "lasso",
  "list_pool",
+ "rustc-hash 2.1.1",
  "stdx",
  "typed-index-collections",
  "typed_indexmap",
@@ -842,6 +845,7 @@ dependencies = [
  "mir",
  "mir_interpret",
  "mir_reader",
+ "rustc-hash 2.1.1",
  "stdx",
  "typed-index-collections",
  "typed_indexmap",
@@ -1025,7 +1029,6 @@ dependencies = [
 name = "osdi"
 version = "0.0.0"
 dependencies = [
- "ahash 0.8.12",
  "base_n",
  "camino",
  "expect-test",
@@ -1345,6 +1348,7 @@ dependencies = [
  "mir_build",
  "mir_interpret",
  "mir_opt",
+ "rustc-hash 2.1.1",
  "smol_str",
  "stdx",
  "syntax",
@@ -1496,7 +1500,6 @@ dependencies = [
 name = "typed_indexmap"
 version = "0.0.0"
 dependencies = [
- "ahash 0.8.12",
  "indexmap 2.10.0",
  "rustc-hash 2.1.1",
 ]
@@ -1604,6 +1607,7 @@ dependencies = [
  "encoding_rs",
  "indexmap 2.10.0",
  "paths",
+ "rustc-hash 2.1.1",
 ]
 
 [[package]]

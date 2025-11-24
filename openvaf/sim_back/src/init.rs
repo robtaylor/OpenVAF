@@ -1,10 +1,13 @@
-use ahash::{AHashMap, AHashSet, RandomState};
+use std::hash::BuildHasherDefault;
+
+use ahash::{AHashMap, AHashSet};
 use bitset::{BitSet, SparseBitMatrix};
 use hir::{CompilationDB, Type};
 use hir_lower::{HirInterner, ParamKind, PlaceKind};
 use indexmap::IndexMap;
 use mir::builder::InstBuilder;
 use mir::cursor::{Cursor, FuncCursor};
+use rustc_hash::FxHasher;
 use mir::{
     strip_optbarrier, Block, ControlFlowGraph, DominatorTree, FuncRef, Function, Inst,
     InstructionData, Opcode, Value, FALSE,
@@ -31,7 +34,7 @@ impl_debug_display! {match CacheSlot{CacheSlot(id) => "cslot{id}";}}
 pub struct Initialization {
     pub func: Function,
     pub intern: HirInterner,
-    pub cached_vals: IndexMap<Value, CacheSlot, RandomState>,
+    pub cached_vals: IndexMap<Value, CacheSlot, BuildHasherDefault<FxHasher>>,
     pub cache_slots: TiMap<CacheSlot, (PackedOption<ClassId>, u32), hir::Type>,
 }
 
@@ -62,7 +65,7 @@ impl Initialization {
 
 struct Builder<'a> {
     init: Initialization,
-    init_cache: IndexMap<Value, Inst, RandomState>,
+    init_cache: IndexMap<Value, Inst, BuildHasherDefault<FxHasher>>,
     // inputs
     func: &'a mut Function,
     cfg: &'a mut ControlFlowGraph,
@@ -81,11 +84,17 @@ impl<'a> Builder<'a> {
         Builder {
             init: Initialization {
                 func: Function::with_name(format!("{}_init", &ctx.func.name)),
-                cached_vals: IndexMap::with_capacity_and_hasher(128, RandomState::new()),
+                cached_vals: IndexMap::with_capacity_and_hasher(
+                    128,
+                    BuildHasherDefault::<FxHasher>::default(),
+                ),
                 cache_slots: TiMap::default(),
                 intern: HirInterner::default(),
             },
-            init_cache: IndexMap::with_capacity_and_hasher(256, RandomState::default()),
+            init_cache: IndexMap::with_capacity_and_hasher(
+                256,
+                BuildHasherDefault::<FxHasher>::default(),
+            ),
             func: &mut ctx.func,
             cfg: &mut ctx.cfg,
             dom_tree: &mut ctx.dom_tree,
