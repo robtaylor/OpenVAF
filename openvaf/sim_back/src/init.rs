@@ -7,12 +7,12 @@ use hir_lower::{HirInterner, ParamKind, PlaceKind};
 use indexmap::IndexMap;
 use mir::builder::InstBuilder;
 use mir::cursor::{Cursor, FuncCursor};
-use rustc_hash::FxHasher;
 use mir::{
     strip_optbarrier, Block, ControlFlowGraph, DominatorTree, FuncRef, Function, Inst,
     InstructionData, Opcode, Value, FALSE,
 };
 use mir_opt::{aggressive_dead_code_elimination, simplify_cfg, simplify_cfg_init, ClassId, GVN};
+use rustc_hash::FxHasher;
 use stdx::packed_option::PackedOption;
 use stdx::{impl_debug_display, impl_idx_from};
 use typed_indexmap::TiMap;
