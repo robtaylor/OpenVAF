@@ -1,0 +1,121 @@
+name: Determinism Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: 'Number of test runs per architecture'
+        required: false
+        default: '5'
+
+jobs:
+  determinism-check:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            llvm_setup: apt
+          - os: macos-15
+            llvm_setup: brew
+          - os: macos-15-intel
+            llvm_setup: brew
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # Linux LLVM setup
+      - name: Install LLVM 18 (Linux)
+        if: matrix.llvm_setup == 'apt'
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+          sudo apt-get install -y llvm-18 llvm-18-dev libclang-18-dev
+          sudo apt-get install -y build-essential
+
+      - name: Set LLVM environment variables (Linux)
+        if: matrix.llvm_setup == 'apt'
+        run: |
+          echo "LLVM_SYS_181_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
+          echo "CLANG_PATH=/usr/lib/llvm-18/bin/clang" >> $GITHUB_ENV
+          echo "PATH=/usr/lib/llvm-18/bin:$PATH" >> $GITHUB_ENV
+
+      # macOS LLVM setup
+      - name: Install dependencies with Homebrew (macOS)
+        if: matrix.llvm_setup == 'brew'
+        uses: tecolicom/actions-use-homebrew-tools@v1
+        with:
+          tools: pkg-config llvm@18
+          cache: yes
+
+      - name: Set LLVM environment variables (macOS)
+        if: matrix.llvm_setup == 'brew'
+        run: |
+          echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
+          echo "LLVM_SYS_181_PREFIX=$(brew --prefix llvm@18)" >> $GITHUB_ENV
+
+      # Common environment setup
+      - name: Set common environment variables
+        run: |
+          echo "RUN_DEV_TESTS=1" >> $GITHUB_ENV
+          echo "RUST_BACKTRACE=1" >> $GITHUB_ENV
+
+      # Build once
+      - name: Build
+        run: cargo build --release
+
+      # Run integration tests multiple times, capturing snapshots after each
+      - name: Run integration tests multiple times
+        run: |
+          NUM_RUNS=${{ github.event.inputs.runs || '5' }}
+          for i in $(seq 1 $NUM_RUNS); do
+            echo "=========================================="
+            echo "=== Run $i of $NUM_RUNS ==="
+            echo "=========================================="
+            UPDATE_EXPECT=1 cargo test --release --test integration || true
+            mkdir -p snapshots/run$i
+            cp openvaf/test_data/osdi/*.snap snapshots/run$i/
+            echo "Captured $(ls snapshots/run$i/*.snap | wc -l) snapshot files"
+          done
+
+      # Compare snapshots between consecutive runs
+      - name: Compare snapshots between runs
+        run: |
+          NUM_RUNS=${{ github.event.inputs.runs || '5' }}
+          echo "=========================================="
+          echo "=== Snapshot Comparison Results ==="
+          echo "=========================================="
+          ALL_IDENTICAL=true
+          for i in $(seq 1 $((NUM_RUNS - 1))); do
+            next=$((i + 1))
+            echo ""
+            echo "--- Comparing run$i vs run$next ---"
+            if diff -r snapshots/run$i snapshots/run$next > /dev/null 2>&1; then
+              echo "IDENTICAL"
+            else
+              echo "DIFFERS - showing differences:"
+              diff -r snapshots/run$i snapshots/run$next || true
+              ALL_IDENTICAL=false
+            fi
+          done
+          echo ""
+          echo "=========================================="
+          if [ "$ALL_IDENTICAL" = true ]; then
+            echo "RESULT: All runs produced identical snapshots"
+          else
+            echo "RESULT: Non-determinism detected - snapshots differ between runs"
+          fi
+          echo "=========================================="
+
+      # Upload all snapshots as artifact
+      - name: Upload snapshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshots-${{ matrix.os }}
+          path: snapshots/
+          retention-days: 7
