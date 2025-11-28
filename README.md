@@ -65,6 +65,8 @@ The version name is generated with `git --describe`. The OpenVAF-reloaded that p
 
 If the binary is named `openvaf` it comes from the `branches/osdi_0.3` branch and produces models with the OSDI 0.3 API. If the binary is named `openvaf-r` it comes from the `master` branch and produces models with the OSDI 0.4 API. 
 
+Packages named `openvaf-reloaded-llvm18-osdi_0.4*` come from the `llvm18` branch. They are linked against LLVM18. The LLVM18 version of OpenVAF produces slightly faster models. If you experience problems with these binaries, let me know. Packages named `openvaf-reloaded-osdi_0.4*` are the conservative choice. They come from the `master` branch and are linked against LLVM15.
+
 
 # Building OpenVAF-reloaded
 
@@ -114,12 +116,47 @@ ninja
 ninja install 
 ```
 
-Add the LLVM binary directory (`<LLVM install directory>\bin`) to the PATH. Set the `LLVM_SYS_181_PREFIX` environmental variable to `<LLVM install directory>`. 
+Add the LLVM binary directory (`<LLVM install directory>\bin`) to the PATH. Set the `LLVM_SYS_181_PREFIX` environmental variable to `<LLVM install directory>`.
 
-Restart command prompt. Now you are good to go. 
+Restart command prompt. Now you are good to go.
+
+## Setting up the dependencies under macOS
+
+Install Homebrew if not already installed, then install LLVM 18:
+```bash
+brew install llvm@18
+```
+
+Install Rust if not already installed:
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+During installation select "Customize installation" and set profile to "complete".
+
+**Option 1: Use xtask (recommended)** - No additional setup needed. The `cargo xtask cargo-build` command automatically detects LLVM via `HOMEBREW_PREFIX`.
+
+**Option 2: Manual environment setup** - set the following before building:
+```bash
+export LLVM_SYS_181_PREFIX=$(brew --prefix llvm@18)
+export PATH="$(brew --prefix llvm@18)/bin:$PATH"
+```
+
+Now you are good to go.
 
 
 ## Building
+
+### Quick Build (macOS only)
+
+On macOS, you can use the xtask command which automatically detects LLVM 18 via Homebrew:
+```bash
+cargo xtask cargo-build --release
+```
+
+This will auto-configure LLVM 18 paths and build the release version.
+
+### Manual Build
 
 To build the release version (`target/release/openvaf-r`), type
 ```
@@ -140,7 +177,20 @@ The debug configuration disables rayon running the .osdi file build process in p
 
 # Running tests with cargo
 
-Pascal has set up a test suite for OpenVAF. To run the tests on the debug version of the binary type
+Pascal has set up a test suite for OpenVAF.
+
+## Quick Test (macOS only)
+
+On macOS, you can use the xtask command which automatically detects LLVM 18 via Homebrew:
+```bash
+cargo xtask cargo-test --release
+```
+
+This will auto-configure LLVM 18 paths and run all tests.
+
+## Manual Testing
+
+To run the tests on the debug version of the binary type
 
     cargo test
 
@@ -148,11 +198,21 @@ To run the tests on the release version type
 
     cargo test --release
 
-By default only fast tests are run. To run all tests set the `RUN_SLOW_TEST` variable to 1, e.g. 
+By default only fast tests are run. To run all tests set the `RUN_SLOW_TEST` variable to 1, e.g.
 
-    RUN_SLOW_TESTS=1 cargo test 
+    RUN_SLOW_TESTS=1 cargo test
 
-Your changes may fail some tests although they are correct. Consider the case you changed the MIR generator. The expected test results assume MIR is generated the way Pascal did it. If you are sure your changes are correct you can update the expected values (stored in `openvaf/test_data` as files ending with .snap). To do this set the `UPDATE_EXPECT` variable 1, e.g. 
+## Integration Tests
+
+Integration tests compile real-world Verilog-A models (BSIM, HiSIM, PSP, MEXTRAM, etc.) and verify the generated OSDI libraries. These tests are disabled by default but can be enabled with:
+
+    RUN_DEV_TESTS=1 cargo test --release --test integration
+
+On macOS with LLVM 18, all integration tests should pass.
+
+## Updating Expected Test Results
+
+Your changes may fail some tests although they are correct. Consider the case you changed the MIR generator. The expected test results assume MIR is generated the way Pascal did it. If you are sure your changes are correct you can update the expected values (stored in `openvaf/test_data` as files ending with .snap). To do this set the `UPDATE_EXPECT` variable 1, e.g.
 
     UPDATE_EXPECT=1 cargo test
 
