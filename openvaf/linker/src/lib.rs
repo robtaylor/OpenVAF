@@ -97,22 +97,15 @@ fn linker_with_args<'a>(
     // this environment variable too in recent versions.
     cmd.cmd().env("ZERO_AR_DATE", "1");
 
-    // When using ld64.lld on macOS, we need to add the SDK sysroot
+    // On macOS, we always need to add the SDK sysroot for linking against system libraries
     if flavor == LinkerFlavor::Ld64 && target.options.is_like_osx {
-        if let Some(llvm_prefix) = get_llvm_prefix() {
-            let llvm_lld = PathBuf::from(llvm_prefix).join("bin/ld64.lld");
-            if llvm_lld.exists() {
-                // Detect SDK path using xcrun
-                if let Ok(output) =
-                    std::process::Command::new("xcrun").args(["--show-sdk-path"]).output()
-                {
-                    if output.status.success() {
-                        if let Ok(sdk_path) = String::from_utf8(output.stdout) {
-                            let sdk_path = sdk_path.trim();
-                            if !sdk_path.is_empty() {
-                                cmd.args(["-syslibroot", sdk_path]);
-                            }
-                        }
+        // Detect SDK path using xcrun
+        if let Ok(output) = std::process::Command::new("xcrun").args(["--show-sdk-path"]).output() {
+            if output.status.success() {
+                if let Ok(sdk_path) = String::from_utf8(output.stdout) {
+                    let sdk_path = sdk_path.trim();
+                    if !sdk_path.is_empty() {
+                        cmd.args(["-syslibroot", sdk_path]);
                     }
                 }
             }
@@ -187,6 +180,7 @@ fn get_linker<'a>(
                     }
                     "ld".into()
                 } else {
+                    // On macOS and Linux, use system ld
                     "ld".into()
                 }
             });
