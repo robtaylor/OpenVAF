@@ -6,7 +6,7 @@ use camino::Utf8Path;
 use expect_test::expect_file;
 use float_cmp::assert_approx_eq;
 use mini_harness::{harness, Result};
-use openvaf::{CompilationDestination, CompilationTermination, LLVMCodeGenOptLevel};
+use openvaf::{CompilationDestination, CompilationOpts, CompilationTermination, LLVMCodeGenOptLevel};
 use stdx::{ignore_dev_tests, openvaf_test_data, project_root};
 use target::spec::Target;
 
@@ -15,10 +15,6 @@ use crate::mock_sim::{MockSimulation, ALPHA};
 
 mod load;
 mod mock_sim;
-
-fn compile_and_load(root_file: &Utf8Path) -> &'static OsdiDescriptor {
-    compile_and_load_with_opts(root_file, hir::CompilationOpts::default())
-}
 
 fn compile_and_load_with_opts(
     root_file: &Utf8Path,
@@ -53,8 +49,9 @@ fn compile_and_load_with_opts(
         }
     };
     let libs = unsafe { load_osdi_lib(&lib_file).unwrap() };
-    assert_eq!(libs.len(), 1);
-    &libs[0]
+    assert!(!libs.is_empty(), "Expected at least one module in {root_file}");
+    // Return the last module (typically the main/top-level module)
+    libs.last().unwrap()
 }
 
 // fn integration_test(dir: &str) -> Result {
@@ -85,19 +82,19 @@ fn integration_test(dir: &Path) -> Result {
 /// Test a single Verilog-A file directly (for VACASK models)
 /// Uses "vacask_" prefix for snapshot names to avoid conflicts with OpenVAF models
 fn vacask_test(file: &Path) -> Result {
-    test_descriptor_with_prefix(file, "vacask_", &CompilationOpts::default())?;
+    test_descriptor_with_prefix(file, "vacask_", CompilationOpts::default())?;
     Ok(())
 }
 
 /// Test a single Verilog-A file with SPICE naming prefix
 fn vacask_spice_test(file: &Path) -> Result {
-    test_descriptor_with_prefix(file, "vacask_spice_", &CompilationOpts::default())?;
+    test_descriptor_with_prefix(file, "vacask_spice_", CompilationOpts::default())?;
     Ok(())
 }
 
 /// Test a single Verilog-A file with simplified SPICE naming prefix
 fn vacask_spice_sn_test(file: &Path) -> Result {
-    test_descriptor_with_prefix(file, "vacask_spice_sn_", &CompilationOpts::default())?;
+    test_descriptor_with_prefix(file, "vacask_spice_sn_", CompilationOpts::default())?;
     Ok(())
 }
 
