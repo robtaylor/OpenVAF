@@ -2,9 +2,11 @@ use std::mem;
 
 use basedb::lints::LintRegistry;
 use basedb::{AstIdMap, ErasedAstId, LintAttrs};
-use syntax::ast::{self, ArgListOwner, AttrIter, AttrsOwner, FunctionRef};
-use syntax::name::AsName;
+use syntax::ast::{self, ArgListOwner, AssignOp, AttrIter, AttrsOwner, BinaryOp, FunctionRef};
+use syntax::name::{AsName, Name};
 use syntax::AstPtr;
+
+use crate::item_tree::{ItemTree, Module, ModuleInstItem, ModuleItem};
 
 // use tracing::debug;
 use super::{Body, BodySourceMap};
@@ -340,21 +342,20 @@ impl LowerCtx<'_> {
             return None;
         }
 
-        // Get parameter value expression AstPtr
+        // Get parameter value name from the parameter assignments
+        // param_assignments stores (Name, Name) pairs where the second is the value identifier
         let param_name = primitive.param_name();
-        let param_expr_ptr = inst
+        let param_value_name = inst
             .param_assignments
             .iter()
             .find(|(name, _)| &**name == param_name)
-            .map(|(_, expr_ptr)| expr_ptr.clone())?;
+            .map(|(_, value_name)| value_name.clone())?;
 
-        // Get the syntax tree to resolve the AstPtr
-        let root_file = self.curr_scope.0.root_file;
-        let syntax_tree = self.db.parse(root_file).tree();
-
-        // Collect the parameter expression from AST
-        let param_ast = param_expr_ptr.to_node(syntax_tree.syntax());
-        let param_expr = self.collect_expr(param_ast);
+        // Create a path expression from the parameter value name
+        let param_expr = self.alloc_expr_desugared(Expr::Path {
+            path: Path::new_ident(param_value_name),
+            port: false,
+        });
 
         let hi = &inst.port_connections[0];
         let lo = &inst.port_connections[1];
