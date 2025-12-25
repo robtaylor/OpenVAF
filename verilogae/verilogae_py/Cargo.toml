@@ -32,3 +32,7 @@ llvm18 = ["verilogae_ffi/llvm18"]
 llvm19 = ["verilogae_ffi/llvm19"]
 llvm20 = ["verilogae_ffi/llvm20"]
 llvm21 = ["verilogae_ffi/llvm21"]
+
+[lints.rust]
+# Python version cfg flags are set by pyo3-build-config
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(Py_3_8)', 'cfg(Py_3_10)', 'cfg(cross_compile)'] }
