@@ -19,7 +19,6 @@ use rustc_hash::FxHasher;
 use base_n::CASE_INSENSITIVE;
 use camino::{Utf8Path, Utf8PathBuf};
 use hir::{CompilationDB, ParamSysFun, Type};
-use hir_def::db::HirDefDB;
 use hir_lower::{CallBackKind, HirInterner, ParamKind};
 use lasso::Rodeo;
 use llvm_sys::target::{LLVMABISizeOfType, LLVMDisposeTargetData};
@@ -133,7 +132,7 @@ pub fn compile<'a>(
     let irs = Arc::new(Mutex::new(HashMap::with_hasher(BuildHasherDefault::<FxHasher>::default())));
 
     // Build natures, disciplines, and attributes vectors, intern strings in Rodeo
-    let (natures_vec, disciplines_vec, attributes_vec) = nda_arrays(&*db, &mut literals);
+    let (natures_vec, disciplines_vec, attributes_vec) = nda_arrays(&db, &mut literals);
 
     rayon_core::scope(|scope| {
         let db = db;
