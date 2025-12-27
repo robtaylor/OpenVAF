@@ -12,34 +12,48 @@ The project is a fork of Pascal Kuthe's original OpenVAF compiler, maintained by
 
 ### Prerequisites
 - **Rust toolchain**: Install with profile "complete"
-- **LLVM 21**: Install via package manager:
-  - macOS: `brew install llvm`
+- **LLVM 18-21**: Install via package manager:
+  - macOS: `brew install llvm` (LLVM 21) or `brew install llvm@18`
   - Ubuntu: Use apt.llvm.org script (see CI workflow)
 
-### Building the Compiler
+### Building the Compiler (Recommended)
 ```bash
-# Build release version (recommended)
-cargo build --release --bin openvaf-r
+# Auto-detect LLVM and configure
+./configure
+
+# Build release version
+./build.sh --release
 
 # Build debug version
-cargo build --bin openvaf-r
+./build.sh
+```
 
-# The binaries are output to:
-# - target/release/openvaf-r (release)
-# - target/debug/openvaf-r (debug)
+### Building the Compiler (Manual)
+```bash
+# Set LLVM prefix (adjust version as needed)
+export LLVM_SYS_211_PREFIX=$(brew --prefix llvm)  # macOS LLVM 21
+# Or: export LLVM_SYS_181_PREFIX=/usr/lib/llvm-18  # Ubuntu LLVM 18
+
+# Build with explicit feature flag (no default LLVM version)
+cargo build --release --features llvm21 --bin openvaf-r
+# Or: cargo build --release --features llvm18 --bin openvaf-r
 ```
 
 ### Testing
 ```bash
-# Run fast tests only (default)
-cargo test
-cargo test --release  # On release build
+# Using build script (after ./configure)
+./build.sh --test
+./build.sh --test --release
+
+# Or manually with explicit features
+cargo test --features llvm21
+cargo test --release --features llvm21
 
 # Run all tests including slow ones
-RUN_SLOW_TESTS=1 cargo test
+RUN_SLOW_TESTS=1 cargo test --features llvm21
 
 # Update test snapshots (when you've intentionally changed MIR/IR generation)
-UPDATE_EXPECT=1 cargo test
+UPDATE_EXPECT=1 cargo test --features llvm21
 ```
 
 **Note**: Some expected test results are in `.snap` files in `openvaf/test_data/`, while others are hard-coded in test source files (e.g., `openvaf/mir_autodiff/src/builder/tests.rs`) and must be updated manually.
@@ -171,7 +185,8 @@ The descriptor structure is backward-compatible with OSDI 0.3 when cast appropri
 ## Important Notes
 
 - The project uses workspace resolver version 2
-- Multi-LLVM support: Use `--features llvm18/llvm19/llvm20/llvm21` (default: llvm21)
+- Multi-LLVM support: Use `--features llvm18/llvm19/llvm20/llvm21` (no default - must specify explicitly)
+- Use `./configure` to auto-detect LLVM, then `./build.sh` to build
 - Custom salsa fork: `git = 'https://github.com/pascalkuthe/salsa'`
 - Rust edition: 2021, minimum version varies by crate
 - Release builds use `lto = "off"` and `incremental = true` for faster iteration
@@ -179,9 +194,10 @@ The descriptor structure is backward-compatible with OSDI 0.3 when cast appropri
 
 ### Building with different LLVM versions
 ```bash
-# Build with LLVM 18 (Ubuntu Noble system package)
-cargo build --release --no-default-features --features llvm18
+# Auto-detect and configure
+./configure
 
-# Build with LLVM 21 (default)
-cargo build --release
+# Or build with explicit LLVM version
+cargo build --release --features llvm18  # LLVM 18
+cargo build --release --features llvm21  # LLVM 21
 ```
