@@ -17,6 +17,10 @@ llvm18 = ["openvaf/llvm18"]
 llvm19 = ["openvaf/llvm19"]
 llvm20 = ["openvaf/llvm20"]
 llvm21 = ["openvaf/llvm21"]
+nightly = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("nightly"))'] }
 
 [dependencies]
 

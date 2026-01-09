@@ -20,6 +20,7 @@ use crate::inst_data::OsdiInstanceParam;
 
 use std::collections::HashMap;
 
+#[allow(dead_code)]
 struct VoidAbortCallback;
 
 impl<'ll> InlineCallbackBuilder<'ll> for VoidAbortCallback {

@@ -426,7 +426,7 @@ impl ModelInfo {
         })
     }
 
-    pub(crate) fn intern_model(&self, db: &CompilationDB, literals: &mut Rodeo) -> InternedModel {
+    pub(crate) fn intern_model(&self, db: &CompilationDB, literals: &mut Rodeo) -> InternedModel<'_> {
         let params = self
             .params
             .values()
