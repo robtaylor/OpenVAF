@@ -6,7 +6,9 @@ use camino::Utf8Path;
 use expect_test::expect_file;
 use float_cmp::assert_approx_eq;
 use mini_harness::{harness, Result};
-use openvaf::{CompilationDestination, CompilationOpts, CompilationTermination, LLVMCodeGenOptLevel};
+use openvaf::{
+    CompilationDestination, CompilationOpts, CompilationTermination, LLVMCodeGenOptLevel,
+};
 use stdx::{ignore_dev_tests, openvaf_test_data, project_root};
 use target::spec::Target;
 
@@ -108,11 +110,18 @@ fn vacask_devices() -> std::path::PathBuf {
     project_root().join("external/vacask/devices")
 }
 
-fn test_descriptor(main_file: &Path, opts: hir::CompilationOpts) -> Result<&'static OsdiDescriptor> {
+fn test_descriptor(
+    main_file: &Path,
+    opts: hir::CompilationOpts,
+) -> Result<&'static OsdiDescriptor> {
     test_descriptor_with_prefix(main_file, "", opts)
 }
 
-fn test_descriptor_with_prefix(main_file: &Path, prefix: &str, opts: hir::CompilationOpts) -> Result<&'static OsdiDescriptor> {
+fn test_descriptor_with_prefix(
+    main_file: &Path,
+    prefix: &str,
+    opts: hir::CompilationOpts,
+) -> Result<&'static OsdiDescriptor> {
     let main_file: &Utf8Path = main_file.try_into().unwrap();
     let name = main_file.file_stem().unwrap();
     let desc = compile_and_load_with_opts(main_file, opts);

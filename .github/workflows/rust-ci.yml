@@ -140,16 +140,12 @@ jobs:
         key: ${{ runner.os }}-${{runner.arch}}-llvm${{ matrix.llvm_version }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-${{runner.arch}}-llvm${{ matrix.llvm_version }}-cargo-
 
-    - name: Install LLVM ${{ matrix.llvm_version }} and Windows cross-compilation tools
+    - name: Install LLVM ${{ matrix.llvm_version }}
       run: |
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
         sudo ./llvm.sh ${{ matrix.llvm_version }}
         sudo apt-get install -y llvm-${{ matrix.llvm_version }} llvm-${{ matrix.llvm_version }}-dev libclang-${{ matrix.llvm_version }}-dev
-
-        # Install llvm-lib for Windows cross-compilation
-        sudo apt-get install -y mingw-w64
-
         # Create symlink for llvm-lib
         sudo ln -sf /usr/bin/llvm-ar-${{ matrix.llvm_version }} /usr/local/bin/llvm-lib
 
