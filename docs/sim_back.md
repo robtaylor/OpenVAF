@@ -186,7 +186,10 @@ Adds parameter initialization code to instance and model setup functions.
 
 ## Detailed Module Documentation
 
-- **[Topology Module](sim_back-topology.md)** - Branch extraction, linearization, small-signal network
+- **[Context](sim_back-context.md)** - Compilation state, optimization pipeline, OP-dependence tracking
+- **[Topology](sim_back-topology.md)** - Branch extraction, linearization, small-signal network
+- **[DaeSystem](sim_back-dae.md)** - DAE equations, residuals, Jacobian matrix, noise sources
+- **[Initialization](sim_back-init.md)** - OP-independent code extraction, cache slot assignment
 
 ---
 
