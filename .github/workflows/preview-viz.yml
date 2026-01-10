@@ -1,0 +1,116 @@
+name: Preview Visualizations
+concurrency: preview-${{ github.ref }}
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - closed
+    paths:
+      - 'openvaf/openvaf-viz/**'
+      - 'integration_tests/**'
+      - '.github/workflows/build-viz.yml'
+      - '.github/workflows/preview-viz.yml'
+
+jobs:
+  build-viz:
+    if: github.event.action != 'closed'
+    uses: ./.github/workflows/build-viz.yml
+
+  deploy-preview:
+    runs-on: ubuntu-latest
+    needs: build-viz
+    if: github.event.action != 'closed'
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      preview-url: ${{ steps.preview.outputs.deployment-url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download viz artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: viz
+          path: viz-output
+
+      - name: Deploy preview
+        id: preview
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: viz-output
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
+          action: auto
+
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cleanup preview
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: viz-output
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
+          action: remove
+
+  comment-on-pr:
+    runs-on: ubuntu-latest
+    needs: deploy-preview
+    if: github.event.action != 'closed'
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Get repository info
+        id: repo-info
+        run: |
+          # Derive GitHub Pages URL from repository
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          echo "pages-url=https://${OWNER}.github.io/${REPO}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for GitHub Pages deployment
+        run: |
+          PREVIEW_URL="${{ steps.repo-info.outputs.pages-url }}/pr-preview/pr-${{ github.event.pull_request.number }}/"
+          echo "Waiting for $PREVIEW_URL to be available..."
+
+          for i in {1..30}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$PREVIEW_URL" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Preview is live!"
+              exit 0
+            fi
+            echo "Attempt $i: Got HTTP $STATUS, waiting 10s..."
+            sleep 10
+          done
+
+          echo "Preview may not be ready yet, but commenting anyway"
+
+      - name: Comment on PR
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## IR Visualization Preview
+
+            **Preview is deploying!**
+
+            **[View IR Visualizations](${{ steps.repo-info.outputs.pages-url }}/pr-preview/pr-${{ github.event.pull_request.number }}/)**
+
+            This preview shows interactive visualizations of OpenVAF's intermediate representations for all compact models.
+
+            ---
+            <sub>Built from commit ${{ github.sha }}</sub>
