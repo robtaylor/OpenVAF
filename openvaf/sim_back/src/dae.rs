@@ -122,8 +122,10 @@ pub struct Residual {
     pub resist: Value,
     /// The reactive part (Q) of the DAE cost function
     pub react: Value,
-    resist_small_signal: Value,
-    react_small_signal: Value,
+    /// The small-signal resistive part - values known to be zero in large-signal analysis
+    pub resist_small_signal: Value,
+    /// The small-signal reactive part - values known to be zero in large-signal analysis
+    pub react_small_signal: Value,
     /// Corrective term that needs to be added during each newton iteration to
     /// correct for limiting. Limiting reduces the maximum change in a variable
     /// for this model. That means that instead of x the system is evaluated
