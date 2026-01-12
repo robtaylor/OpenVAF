@@ -868,6 +868,16 @@ function renderFunctionView() {
                 <button class="graph-btn" onclick="resetZoomTopology()">Reset</button>
                 <button class="graph-btn" onclick="fitTopologyGraph()">Fit</button>
             </div>
+            <div style="position: absolute; top: 10px; left: 16px; max-width: 400px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; font-size: 11px; z-index: 100;">
+                <strong style="color: var(--accent);">Jacobian Dependency Graph</strong><br>
+                <span style="color: var(--text-muted);">
+                    Nodes are unknowns (voltages/currents). Arrows show Jacobian dependencies:
+                    A→B means equation for B depends on variable A (∂f<sub>B</sub>/∂x<sub>A</sub> ≠ 0).
+                    Colors: <span style="color: #4caf50;">■</span> resistive,
+                    <span style="color: #2196f3;">■</span> reactive,
+                    <span style="color: #ff9800;">■</span> both.
+                </span>
+            </div>
             <div id="topology-graph"></div>
             <div id="topology-tooltip" class="graph-tooltip" style="display: none;"></div>
         </div>

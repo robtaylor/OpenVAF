@@ -3,7 +3,7 @@
 use hir::CompilationDB;
 use hir_lower::{CurrentKind, ParamKind};
 use lasso::Rodeo;
-use mir::{ControlFlowGraph, Function, InstructionData, ValueDef};
+use mir::{ControlFlowGraph, Function, InstructionData, ValueDef, F_ZERO};
 use serde::Serialize;
 use sim_back::dae::{NoiseSourceKind, SimUnknown};
 use sim_back::{CompiledModule, ModuleInfo, SimUnknownKind};
@@ -331,9 +331,9 @@ impl DaeSystemViz {
                 let row_name = unknowns.get(row_idx).map(|u| u.name.clone()).unwrap_or_default();
                 let col_name = unknowns.get(col_idx).map(|u| u.name.clone()).unwrap_or_default();
 
-                // Check if values are the FALSE constant (used as placeholder for no value)
-                let has_resist = u32::from(entry.resist) != 0;
-                let has_react = u32::from(entry.react) != 0;
+                // Check if values represent actual contributions (F_ZERO means no contribution)
+                let has_resist = entry.resist != F_ZERO;
+                let has_react = entry.react != F_ZERO;
 
                 JacobianEntryViz {
                     row: row_idx,
