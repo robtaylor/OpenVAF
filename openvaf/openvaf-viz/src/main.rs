@@ -21,7 +21,7 @@ pub use crate::html::HtmlOptions;
 pub use crate::json::JsonOptions;
 
 use basedb::diagnostics::ConsoleSink;
-use hir::CompilationDB;
+use hir::{CompilationDB, CompilationOpts};
 use lasso::Rodeo;
 use paths::AbsPathBuf;
 use sim_back::{collect_modules, CompiledModule};
@@ -102,7 +102,7 @@ fn main() -> Result<()> {
         args.include.iter().filter_map(|p| p.canonicalize().ok().map(AbsPathBuf::assert)).collect();
 
     // Create compilation database
-    let db = CompilationDB::new_fs(input.clone(), &include, &args.defines, &[])?;
+    let db = CompilationDB::new_fs(input.clone(), &include, &args.defines, &[], &CompilationOpts::default())?;
 
     // Collect modules
     let modules = collect_modules(&db, false, &mut ConsoleSink::new(&db))
