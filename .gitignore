@@ -37,3 +37,10 @@ markus_notes
 **.swp
 **.swo
 .llvm-version
+*.log
+*.html
+**/__pycache__
+**/.claude
+**/foo
+**/bar
+**/baz
