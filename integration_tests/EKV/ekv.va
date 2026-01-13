@@ -563,6 +563,15 @@ module ekv_va(d,g,s,b);
         if_ir = if_-irprime;
         Ispec = Vt_Vt_2 * n * beta;
         Id = Ispec * if_ir;
+        // Debug trace for OSDI vs JAX comparison
+        $display("EKV_DEBUG: T=%g Vt=%g VG=%g VD=%g VS=%g", T, Vt, VG, VD, VS);
+        $display("EKV_DEBUG: VGprime=%g VP=%g GAMMAprime=%g n=%g", VGprime, VP, GAMMAprime, n);
+        $display("EKV_DEBUG: if_=%g ir=%g irprime=%g if_ir=%g", if_, ir, irprime, if_ir);
+        $display("EKV_DEBUG: beta=%g Ispec=%g Id=%g Mode=%g", beta, Ispec, Id, Mode);
+        // Trace beta computation path
+        $display("EKV_DEBUG: E0=%g KP_Weff=%g Leq=%g", E0, KP_Weff, Leq);
+        $display("EKV_DEBUG: E0_Q_1=%g T0=%g T0_GAMMA_1=%g", E0_Q_1, T0, T0_GAMMA_1);
+        $display("EKV_DEBUG: qb=%g qi=%g eta_qi=%g", qb, qi, eta_qi);
         /* Return threshold voltage
          * Von = Vth(Vs) = Vto + Gamma*(sqrt(Phi + Vsb)-sqrt(Phi)) */
         Von = VTO_S + GAMMAprime*(sqrt_PHI_VS - sqrt_PHI);
