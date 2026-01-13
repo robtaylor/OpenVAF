@@ -125,8 +125,7 @@ fn escape_dot_label(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
 }
 
-/// Generate enhanced DOT with instruction details
-#[allow(dead_code)]
+/// Generate enhanced DOT with instruction details including full PHI edges
 pub fn generate_detailed_dot(func: &Function, cfg: &ControlFlowGraph, name: &str) -> String {
     let mut out = String::new();
 
@@ -190,7 +189,6 @@ pub fn generate_detailed_dot(func: &Function, cfg: &ControlFlowGraph, name: &str
     out
 }
 
-#[allow(dead_code)]
 fn format_block_html_label(func: &Function, block: Block) -> String {
     let mut html = String::new();
     html.push_str("<TABLE BORDER=\"1\" CELLBORDER=\"0\" CELLSPACING=\"0\" BGCOLOR=\"{color}\">");
@@ -227,7 +225,6 @@ fn format_block_html_label(func: &Function, block: Block) -> String {
     html
 }
 
-#[allow(dead_code)]
 fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }

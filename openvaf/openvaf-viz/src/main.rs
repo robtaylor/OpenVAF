@@ -71,6 +71,10 @@ struct Args {
     #[arg(long)]
     dump_unopt: bool,
 
+    /// Generate detailed DOT with full instruction info (for --format dot)
+    #[arg(long)]
+    detailed: bool,
+
     /// Include directories for preprocessing
     #[arg(short = 'I', long = "include")]
     include: Vec<PathBuf>,
@@ -165,11 +169,16 @@ fn main() -> Result<()> {
                 model_param_only: args.model_param_only,
             },
         ),
-        OutputFormat::Dot => mir_viz::generate_dot(
-            &compiled.eval,
-            &mir::ControlFlowGraph::with_function(&compiled.eval),
-            &module_name,
-        ),
+        OutputFormat::Dot => {
+            // Note: init_only not yet supported for DOT format (different types)
+            let func = &compiled.eval;
+            let cfg = mir::ControlFlowGraph::with_function(func);
+            if args.detailed {
+                mir_viz::generate_detailed_dot(func, &cfg, &module_name)
+            } else {
+                mir_viz::generate_dot(func, &cfg, &module_name)
+            }
+        }
     };
 
     // Write output
