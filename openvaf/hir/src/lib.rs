@@ -127,6 +127,11 @@ stdx::impl_debug! {
 }
 
 impl Module {
+    /// Get the internal ModuleId for use with hir_def APIs
+    pub fn module_id(self) -> ModuleId {
+        self.id
+    }
+
     pub fn name(self, db: &CompilationDB) -> String {
         db.module_data(self.id).name.to_string()
     }
