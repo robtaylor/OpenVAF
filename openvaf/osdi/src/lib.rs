@@ -1,5 +1,16 @@
+// Re-export the correct llvm-sys version based on feature flags
+#[cfg(feature = "llvm18")]
+extern crate llvm_sys_181 as llvm_sys;
+#[cfg(feature = "llvm19")]
+extern crate llvm_sys_191 as llvm_sys;
+#[cfg(feature = "llvm20")]
+extern crate llvm_sys_201 as llvm_sys;
+#[cfg(feature = "llvm21")]
+extern crate llvm_sys_211 as llvm_sys;
+
 use std::collections::HashMap;
 use std::ffi::CString;
+use std::hash::BuildHasherDefault;
 use std::ptr::NonNull;
 use std::sync::{Arc, Mutex};
 
@@ -13,6 +24,7 @@ use llvm_sys::target::{LLVMABISizeOfType, LLVMDisposeTargetData};
 use llvm_sys::target_machine::LLVMCodeGenOptLevel;
 use mir_llvm::{CodegenCx, LLVMBackend};
 use ndatable::nda_arrays;
+use rustc_hash::FxHasher;
 use salsa::ParallelDatabase;
 use sim_back::{CompiledModule, ModuleInfo};
 use stdx::{impl_debug_display, impl_idx_from};
@@ -115,8 +127,9 @@ pub fn compile<'a>(
 
     let main_file = dst.with_extension("o");
 
-    let unoptirs = Arc::new(Mutex::new(HashMap::new()));
-    let irs = Arc::new(Mutex::new(HashMap::new()));
+    let unoptirs =
+        Arc::new(Mutex::new(HashMap::with_hasher(BuildHasherDefault::<FxHasher>::default())));
+    let irs = Arc::new(Mutex::new(HashMap::with_hasher(BuildHasherDefault::<FxHasher>::default())));
 
     // Build natures, disciplines, and attributes vectors, intern strings in Rodeo
     let (natures_vec, disciplines_vec, attributes_vec) = nda_arrays(&*db, &mut literals);

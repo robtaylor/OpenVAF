@@ -39,7 +39,7 @@ pub use crate::attributes::AstCache;
 pub use crate::body::{
     AssignmentLhs, Body, BodyRef, ContributeKind, Expr, ExprId, Ref, ResolvedFun, Stmt, StmtId,
 };
-pub use crate::db::CompilationDB;
+pub use crate::db::{CompilationDB, CompilationOpts};
 
 mod attributes;
 mod body;
@@ -127,6 +127,11 @@ stdx::impl_debug! {
 }
 
 impl Module {
+    /// Get the internal ModuleId for use with hir_def APIs
+    pub fn module_id(self) -> ModuleId {
+        self.id
+    }
+
     pub fn name(self, db: &CompilationDB) -> String {
         db.module_data(self.id).name.to_string()
     }

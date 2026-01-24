@@ -1,5 +1,8 @@
+use std::hash::BuildHasherDefault;
+
 use indexmap::IndexSet;
 use mir::{strip_optbarrier, Value, F_ZERO};
+use rustc_hash::FxHasher;
 use stdx::{impl_debug_display, impl_idx_from};
 use typed_index_collections::TiVec;
 use typed_indexmap::TiSet;
@@ -40,7 +43,7 @@ pub struct DaeSystem {
     pub jacobian: TiVec<MatrixEntryId, MatrixEntry>,
     /// list of parameter which are known to be small signal values (always zero during
     /// large signal simulation).
-    pub small_signal_parameters: IndexSet<Value, ahash::RandomState>,
+    pub small_signal_parameters: IndexSet<Value, BuildHasherDefault<FxHasher>>,
     /// noise
     pub noise_sources: Vec<NoiseSource>,
     /// model inputs (node pairs)
@@ -119,8 +122,10 @@ pub struct Residual {
     pub resist: Value,
     /// The reactive part (Q) of the DAE cost function
     pub react: Value,
-    resist_small_signal: Value,
-    react_small_signal: Value,
+    /// The small-signal resistive part - values known to be zero in large-signal analysis
+    pub resist_small_signal: Value,
+    /// The small-signal reactive part - values known to be zero in large-signal analysis
+    pub react_small_signal: Value,
     /// Corrective term that needs to be added during each newton iteration to
     /// correct for limiting. Limiting reduces the maximum change in a variable
     /// for this model. That means that instead of x the system is evaluated
