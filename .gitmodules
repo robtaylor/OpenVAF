@@ -1,3 +1,4 @@
 [submodule "external/vacask"]
 	path = external/vacask
 	url = https://github.com/robtaylor/VACASK.git
+	branch = jax-spice
