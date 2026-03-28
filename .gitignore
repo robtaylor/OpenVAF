@@ -18,7 +18,6 @@
 .direnv
 .envrc
 cargo-timing*.html
-vendor
 .maintainer
 .commit
 wheels

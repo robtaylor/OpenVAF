@@ -1,0 +1,3 @@
+[submodule "vendor/osdi"]
+	path = vendor/osdi
+	url = https://github.com/robtaylor/osdi
